@@ -1,0 +1,114 @@
+name: Reusable CI Workflow
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Environment: development, qa, production'
+      node-version:
+        required: false
+        type: string
+        default: '20'
+        description: 'Node.js version to use'
+      working-directory:
+        required: false
+        type: string
+        default: 'app'
+        description: 'Working directory for npm commands'
+      run-tests:
+        required: false
+        type: boolean
+        default: true
+        description: 'Whether to run tests'
+      coverage-threshold:
+        required: false
+        type: number
+        default: 80
+        description: 'Minimum test coverage percentage'
+
+jobs:
+  ci:
+    name: CI - ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: '${{ inputs.working-directory }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        run: make install
+        env:
+          CI: true
+
+      - name: 🎨 Lint code
+        run: make lint
+
+      - name: 🔍 Type check
+        run: make type-check
+
+      - name: 📋 Validate OpenAPI specification
+        run: make api-lint
+        continue-on-error: ${{ inputs.environment == 'development' }}
+
+      - name: 🧪 Run tests
+        if: inputs.run-tests
+        run: make test-coverage
+        env:
+          NODE_ENV: test
+
+      - name: 📊 Check coverage threshold
+        if: inputs.run-tests
+        run: |
+          COVERAGE=$(cat ${{ inputs.working-directory }}/coverage/coverage-summary.json | jq '.total.lines.pct')
+          echo "Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < ${{ inputs.coverage-threshold }}" | bc -l) )); then
+            echo "❌ Coverage $COVERAGE% is below threshold ${{ inputs.coverage-threshold }}%"
+            exit 1
+          fi
+          echo "✅ Coverage $COVERAGE% meets threshold ${{ inputs.coverage-threshold }}%"
+        continue-on-error: ${{ inputs.environment == 'development' }}
+
+      - name: 📈 Upload coverage reports
+        if: inputs.run-tests && inputs.environment != 'development'
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ${{ inputs.working-directory }}/coverage
+          fail_ci_if_error: false
+        continue-on-error: true
+
+      - name: 🏗️ Build application
+        run: make build
+
+      - name: 📦 Upload build artifacts
+        if: inputs.environment == 'production'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: ${{ inputs.working-directory }}/dist
+          retention-days: 30
+
+      - name: ✅ CI Summary
+        if: always()
+        run: |
+          echo "## CI Summary - ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node.js:** ${{ inputs.node-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Steps Status" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Lint: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Type Check: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ API Validation: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Tests: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
