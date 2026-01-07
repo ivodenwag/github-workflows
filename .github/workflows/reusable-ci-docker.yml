@@ -1,0 +1,46 @@
+name: CI with Docker Compose
+
+on:
+  workflow_call:
+    inputs:
+      compose_files:
+        description: 'Docker compose files to use (space separated)'
+        required: false
+        type: string
+        default: 'docker-compose.yml docker-compose.ci.yml'
+      service_name:
+        description: 'Docker compose service name'
+        required: false
+        type: string
+        default: 'skeleton-service'
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔐 Create dummy secrets
+        run: |
+          mkdir -p secrets
+          echo "test-password" > secrets/database_password.txt
+          echo "test-api-key" > secrets/api_key.txt
+          echo "test-jwt-secret" > secrets/jwt_secret.txt
+
+      - name: 🐳 Build Docker images
+        run: docker compose -f ${{ inputs.compose_files }} build
+
+      - name: 🎨 Lint
+        run: docker compose -f ${{ inputs.compose_files }} run --rm ${{ inputs.service_name }} npm run lint
+
+      - name: 🔍 Type check
+        run: docker compose -f ${{ inputs.compose_files }} run --rm ${{ inputs.service_name }} npm run type-check
+
+      - name: 🧪 Test
+        run: docker compose -f ${{ inputs.compose_files }} run --rm ${{ inputs.service_name }} npm test
+
+      - name: 🏗️ Build
+        run: docker compose -f ${{ inputs.compose_files }} run --rm ${{ inputs.service_name }} npm run build
