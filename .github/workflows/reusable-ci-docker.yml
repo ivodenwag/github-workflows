@@ -31,16 +31,16 @@ jobs:
           echo "test-jwt-secret" > secrets/jwt_secret.txt
 
       - name: 🐳 Build Docker images
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+        run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint
-        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make lint
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
 
       - name: 🔍 Type check
-        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make type-check
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
 
       - name: 🏗️ Build
-        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make build
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
 
       - name: 🧪 Test
-        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make test
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
