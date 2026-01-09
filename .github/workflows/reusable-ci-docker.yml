@@ -34,13 +34,13 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
 
       - name: 🎨 Lint
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm ${{ inputs.service_name }} npm run lint
+        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make lint
 
       - name: 🔍 Type check
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm ${{ inputs.service_name }} npm run type-check
+        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make type-check
 
       - name: 🧪 Test
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm ${{ inputs.service_name }} npm test
+        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make test
 
       - name: 🏗️ Build
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm ${{ inputs.service_name }} npm run build
+        run: COMPOSE_FILES="docker-compose.yml docker-compose.ci.yml" make build
