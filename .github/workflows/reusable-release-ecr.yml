@@ -147,8 +147,10 @@ jobs:
           # Build image with docker-compose
           docker compose -f docker-compose.yml build ${{ inputs.service_name }}
           
-          # Get the actual image name created by docker-compose
-          IMAGE_NAME=$(docker compose -f docker-compose.yml images -q ${{ inputs.service_name }} | xargs docker inspect --format='{{.RepoTags}}' | grep -o '[^[\]]*' | head -1)
+          # Docker-compose names images as: {directory}-{service}
+          # Extract directory name from current path
+          PROJECT_NAME=$(basename $(pwd))
+          IMAGE_NAME="${PROJECT_NAME}-${{ inputs.service_name }}"
           echo "Built image: $IMAGE_NAME"
           
           # Tag image with version and latest
