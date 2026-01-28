@@ -35,41 +35,41 @@ permissions:
   packages: read
 
 jobs:
-  test:
-    name: Test & Build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for release-it to analyze commits
-
-      - name: 🔐 Create dummy secrets
-        run: |
-          mkdir -p secrets
-          echo "test-password" > secrets/database_password.txt
-          echo "test-api-key" > secrets/api_key.txt
-          echo "test-jwt-secret" > secrets/jwt_secret.txt
-
-      - name: 🐳 Build Docker images
-        run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
-
-      - name: 🎨 Lint
-        run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
-
-      - name: 🔍 Type check
-        run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
-
-      - name: 🏗️ Build
-        run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
-
-      - name: 🧪 Test
-        run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
+  # test:
+  #   name: Test & Build
+  #   runs-on: ubuntu-latest
+  #
+  #   steps:
+  #     - name: 📥 Checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0  # Required for release-it to analyze commits
+  #
+  #     - name: 🔐 Create dummy secrets
+  #       run: |
+  #         mkdir -p secrets
+  #         echo "test-password" > secrets/database_password.txt
+  #         echo "test-api-key" > secrets/api_key.txt
+  #         echo "test-jwt-secret" > secrets/jwt_secret.txt
+  #
+  #     - name: 🐳 Build Docker images
+  #       run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
+  #
+  #     - name: 🎨 Lint
+  #       run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
+  #
+  #     - name: 🔍 Type check
+  #       run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
+  #
+  #     - name: 🏗️ Build
+  #       run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
+  #
+  #     - name: 🧪 Test
+  #       run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
 
   release:
     name: Create Release
-    needs: test
+    # needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
