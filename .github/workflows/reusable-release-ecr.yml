@@ -28,9 +28,6 @@ on:
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
         required: false
-      GITHUB_TOKEN:
-        description: 'GitHub token for releases'
-        required: true
 
 permissions:
   id-token: write    # Required for OIDC
