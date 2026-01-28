@@ -89,9 +89,10 @@ jobs:
 
       - name: 📥 Download shared release config
         run: |
-          curl -sL -o .release-it.json \
-            https://raw.githubusercontent.com/ivodenwag/github-workflows/main/shared/.release-it.json
+          curl -sL -H 'Cache-Control: no-cache' -o .release-it.json \
+            "https://raw.githubusercontent.com/ivodenwag/github-workflows/main/shared/.release-it.json?$(date +%s)"
           echo "✅ Downloaded shared release-it config"
+          cat .release-it.json
 
       - name: 📦 Install release-it and plugins
         run: npm install --no-save release-it @release-it/conventional-changelog
