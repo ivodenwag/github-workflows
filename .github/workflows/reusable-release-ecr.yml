@@ -144,18 +144,15 @@ jobs:
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
-          # Build image with docker-compose
-          docker compose -f docker-compose.yml build ${{ inputs.service_name }}
+          # Build image with docker-compose (uses explicit image name from compose file)
+          VERSION=$VERSION docker compose -f docker-compose.yml build ${{ inputs.service_name }}
           
-          # Docker-compose names images as: {directory}-{service}
-          # Extract directory name from current path
-          PROJECT_NAME=$(basename $(pwd))
-          IMAGE_NAME="${PROJECT_NAME}-${{ inputs.service_name }}"
-          echo "Built image: $IMAGE_NAME"
+          # Image name is explicitly set in docker-compose.yml as: {service_name}:${VERSION}
+          echo "Built image: ${{ inputs.service_name }}:$VERSION"
           
-          # Tag image with version and latest
-          docker tag $IMAGE_NAME $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
-          docker tag $IMAGE_NAME $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          # Tag for ECR
+          docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
       - name: 🚀 Push to ECR
         env:
