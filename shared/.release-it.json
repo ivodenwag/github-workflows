@@ -1,14 +1,14 @@
 {
   "$schema": "https://unpkg.com/release-it/schema/release-it.json",
   "git": {
-    "commitMessage": "chore: release v${version}",
-    "tagName": "v${version}",
+    "commitMessage": "chore: release ${version}",
+    "tagName": "${version}",
     "requireBranch": "master",
     "requireCleanWorkingDir": false
   },
   "github": {
     "release": true,
-    "releaseName": "Release v${version}",
+    "releaseName": "Release ${version}",
     "releaseNotes": "npm exec --no -- auto-changelog --stdout --unreleased-only --commit-limit false --hide-credit",
     "autoGenerate": true
   },
