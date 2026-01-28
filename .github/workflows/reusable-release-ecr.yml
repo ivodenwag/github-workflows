@@ -93,6 +93,9 @@ jobs:
             https://raw.githubusercontent.com/ivodenwag/github-workflows/main/shared/.release-it.json
           echo "✅ Downloaded shared release-it config"
 
+      - name: 📦 Install release-it and plugins
+        run: npm install --no-save release-it @release-it/conventional-changelog
+
       - name: 🏷️ Run release-it
         id: release
         env:
@@ -100,8 +103,8 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # Configure git
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "githu
+          npx release-il "github-actions[bot]@users.noreply.github.com"
           
           # Run release-it in CI mode (no npm needed)
           npx release-it@latest --ci --no-npm
