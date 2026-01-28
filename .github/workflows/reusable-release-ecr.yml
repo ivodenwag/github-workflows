@@ -1,0 +1,180 @@
+name: Release & Deploy to ECR
+
+on:
+  workflow_call:
+    inputs:
+      compose_files:
+        description: 'Docker compose files to use (space separated)'
+        required: false
+        type: string
+        default: 'docker-compose.yml docker-compose.ci.yml'
+      service_name:
+        description: 'Docker compose service name'
+        required: true
+        type: string
+      ecr_repository:
+        description: 'ECR repository name'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'eu-central-1'
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+      NPM_TOKEN:
+        description: 'NPM token for release-it (if needed)'
+        required: false
+      GITHUB_TOKEN:
+        description: 'GitHub token for releases'
+        required: true
+
+permissions:
+  id-token: write    # Required for OIDC
+  contents: write    # Required for release-it to create tags/releases
+  packages: read
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for release-it to analyze commits
+
+      - name: 🔐 Create dummy secrets
+        run: |
+          mkdir -p secrets
+          echo "test-password" > secrets/database_password.txt
+          echo "test-api-key" > secrets/api_key.txt
+          echo "test-jwt-secret" > secrets/jwt_secret.txt
+
+      - name: 🐳 Build Docker images
+        run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
+
+      - name: 🎨 Lint
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
+
+      - name: 🔍 Type check
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
+
+      - name: 🏗️ Build
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
+
+      - name: 🧪 Test
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
+
+  release:
+    name: Create Release
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      has_release: ${{ steps.release.outputs.has_release }}
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📥 Download shared release config
+        run: |
+          curl -sL -o .release-it.json \
+            https://raw.githubusercontent.com/ivodenwag/github-workflows/main/shared/.release-it.json
+          echo "✅ Downloaded shared release-it config"
+
+      - name: 🏷️ Run release-it
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Run release-it in CI mode (no npm needed)
+          npx release-it@latest --ci --no-npm
+          
+          # Get the new version
+          VERSION=$(git describe --tags --abbrev=0)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "has_release=true" >> $GITHUB_OUTPUT
+          echo "📦 Released version: ${VERSION}"
+
+  deploy:
+    name: Deploy to ECR
+    needs: release
+    if: needs.release.outputs.has_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.version }}
+
+      - name: 🔐 Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: 🔑 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🏗️ Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # Build image
+          docker compose -f docker-compose.yml build ${{ inputs.service_name }}
+          
+          # Tag image with version and latest
+          docker tag ${{ inputs.service_name }}:latest $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          docker tag ${{ inputs.service_name }}:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: 🚀 Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "✅ Pushed images:"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: 📊 Image summary
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          echo "### 🐳 Docker Image Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`$ECR_REGISTRY\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** \`$ECR_REPOSITORY\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY
