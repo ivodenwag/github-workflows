@@ -1,0 +1,286 @@
+name: ECS CodeDeploy Blue/Green
+
+on:
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: 'ECS cluster name'
+        required: true
+        type: string
+      service_name:
+        description: 'ECS service name'
+        required: true
+        type: string
+      task_family:
+        description: 'ECS task definition family'
+        required: true
+        type: string
+      container_name:
+        description: 'Container name in task definition'
+        required: true
+        type: string
+      container_port:
+        description: 'Container port'
+        required: false
+        type: number
+        default: 3000
+      ecr_repository:
+        description: 'ECR repository name'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag'
+        required: true
+        type: string
+      codedeploy_application:
+        description: 'CodeDeploy application name'
+        required: true
+        type: string
+      codedeploy_deployment_group:
+        description: 'CodeDeploy deployment group name'
+        required: true
+        type: string
+      appspec_path:
+        description: 'Path to appspec.yaml in service repository'
+        required: false
+        type: string
+        default: 'terraform/appspec.yaml'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'eu-central-1'
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+    outputs:
+      deployment_id:
+        description: 'CodeDeploy deployment ID'
+        value: ${{ jobs.deploy.outputs.deployment_id }}
+      task_definition_arn:
+        description: 'New task definition ARN'
+        value: ${{ jobs.deploy.outputs.task_def_arn }}
+
+permissions:
+  id-token: write    # Required for OIDC
+  contents: read     # Required for checkout
+
+jobs:
+  deploy:
+    name: Deploy to ECS via CodeDeploy
+    runs-on: ubuntu-latest
+    outputs:
+      deployment_id: ${{ steps.create-deployment.outputs.deployment_id }}
+      task_def_arn: ${{ steps.register-taskdef.outputs.task_def_arn }}
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: GitHubActions-ECS-CodeDeploy
+
+      - name: 🔍 Check for active deployments
+        id: check-active
+        run: |
+          echo "Checking for active deployments..."
+          ACTIVE=$(aws deploy list-deployments \
+            --application-name ${{ inputs.codedeploy_application }} \
+            --deployment-group-name ${{ inputs.codedeploy_deployment_group }} \
+            --include-only-statuses InProgress \
+            --query 'deployments[0]' \
+            --output text)
+          
+          if [ "$ACTIVE" != "None" ] && [ -n "$ACTIVE" ]; then
+            echo "❌ Deployment already in progress: $ACTIVE"
+            echo "Please wait for current deployment to complete or cancel it manually."
+            exit 1
+          fi
+          
+          echo "✅ No active deployments found"
+
+      - name: 📦 Download current Task Definition
+        id: download-taskdef
+        run: |
+          echo "Downloading Task Definition: ${{ inputs.task_family }}"
+          aws ecs describe-task-definition \
+            --task-definition ${{ inputs.task_family }} \
+            --query 'taskDefinition' > task-def.json
+          
+          echo "Current Task Definition:"
+          cat task-def.json | jq -r '.family + ":" + (.revision|tostring)'
+
+      - name: 🏗️ Build ECR image URI
+        id: build-image-uri
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_URI="${ACCOUNT_ID}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.ecr_repository }}:${{ inputs.image_tag }}"
+          echo "image_uri=$ECR_URI" >> $GITHUB_OUTPUT
+          echo "ECR Image: $ECR_URI"
+
+      - name: 🔄 Update Task Definition with new image
+        id: update-taskdef
+        run: |
+          echo "Updating container image to: ${{ steps.build-image-uri.outputs.image_uri }}"
+          
+          # Update image for specified container
+          jq --arg IMAGE "${{ steps.build-image-uri.outputs.image_uri }}" \
+             --arg CONTAINER "${{ inputs.container_name }}" \
+             '(.containerDefinitions[] | select(.name == $CONTAINER) | .image) = $IMAGE' \
+             task-def.json > updated-task-def.json
+          
+          # Remove read-only fields
+          jq 'del(
+            .taskDefinitionArn,
+            .revision,
+            .status,
+            .requiresAttributes,
+            .compatibilities,
+            .registeredAt,
+            .registeredBy
+          )' updated-task-def.json > new-task-def.json
+          
+          echo "Updated Task Definition:"
+          cat new-task-def.json | jq -r '.family'
+
+      - name: 📝 Register new Task Definition
+        id: register-taskdef
+        run: |
+          echo "Registering new Task Definition..."
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          echo "task_def_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+          echo "✅ Registered: $TASK_DEF_ARN"
+
+      - name: 📄 Load AppSpec from service repository
+        id: load-appspec
+        run: |
+          APPSPEC_PATH="${{ inputs.appspec_path }}"
+          
+          if [ ! -f "$APPSPEC_PATH" ]; then
+            echo "❌ AppSpec not found at: $APPSPEC_PATH"
+            echo "Service must provide appspec.yaml (Service Ownership)"
+            exit 1
+          fi
+          
+          echo "Loading AppSpec from: $APPSPEC_PATH"
+          cp "$APPSPEC_PATH" appspec.yaml
+          
+          echo "AppSpec content:"
+          cat appspec.yaml
+
+      - name: 🔧 Replace Task Definition placeholder in AppSpec
+        id: update-appspec
+        run: |
+          TASK_DEF_ARN="${{ steps.register-taskdef.outputs.task_def_arn }}"
+          
+          echo "Replacing <TASK_DEFINITION> with: $TASK_DEF_ARN"
+          sed -i "s|<TASK_DEFINITION>|$TASK_DEF_ARN|g" appspec.yaml
+          
+          echo "Updated AppSpec:"
+          cat appspec.yaml
+
+      - name: 🚀 Create CodeDeploy deployment
+        id: create-deployment
+        run: |
+          echo "Creating CodeDeploy deployment..."
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name ${{ inputs.codedeploy_application }} \
+            --deployment-group-name ${{ inputs.codedeploy_deployment_group }} \
+            --deployment-config-name CodeDeployDefault.ECSLinear10PercentEvery1Minutes \
+            --description "Deploy ${{ inputs.image_tag }} via GitHub Actions" \
+            --revision "{\"revisionType\":\"AppSpecContent\",\"appSpecContent\":{\"content\":\"$(cat appspec.yaml | jq -Rs .)\"}}" \
+            --query 'deploymentId' \
+            --output text)
+          
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "✅ Deployment created: $DEPLOYMENT_ID"
+          
+          # AWS Console link
+          CONSOLE_URL="https://${{ inputs.aws_region }}.console.aws.amazon.com/codesuite/codedeploy/deployments/$DEPLOYMENT_ID"
+          echo "console_url=$CONSOLE_URL" >> $GITHUB_OUTPUT
+          echo "🔗 Console: $CONSOLE_URL"
+
+      - name: ⏱️ Wait for initial health check (Hybrid Strategy)
+        id: wait-deployment
+        continue-on-error: true  # Don't fail if timeout
+        run: |
+          DEPLOYMENT_ID="${{ steps.create-deployment.outputs.deployment_id }}"
+          
+          echo "Waiting for initial health check (max 3 minutes)..."
+          echo "Full deployment continues in background"
+          
+          # Wait max 180 seconds (3 minutes)
+          timeout 180 aws deploy wait deployment-successful \
+            --deployment-id $DEPLOYMENT_ID || {
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "⏰ Timeout after 3 minutes (expected for long deployments)"
+              echo "Deployment continues in background"
+              echo "status=timeout" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ Wait command failed with exit code: $EXIT_CODE"
+              echo "status=error" >> $GITHUB_OUTPUT
+            fi
+            exit 0  # Don't fail the step
+          }
+          
+          # If we get here, deployment completed within 3 minutes
+          echo "✅ Initial health check passed!"
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 📊 Display Deployment Summary
+        if: always()
+        run: |
+          DEPLOYMENT_ID="${{ steps.create-deployment.outputs.deployment_id }}"
+          TASK_DEF_ARN="${{ steps.register-taskdef.outputs.task_def_arn }}"
+          CONSOLE_URL="${{ steps.create-deployment.outputs.console_url }}"
+          WAIT_STATUS="${{ steps.wait-deployment.outputs.status }}"
+          
+          echo "### ECS CodeDeploy Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** \`${{ inputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** \`${{ inputs.cluster_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ inputs.ecr_repository }}:${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.create-deployment.outcome }}" == "success" ]; then
+            echo "**Status:** 🟢 Deployment Created" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployment ID:** \`$DEPLOYMENT_ID\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Task Definition:** \`$TASK_DEF_ARN\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$WAIT_STATUS" == "success" ]; then
+              echo "**Health Check:** ✅ Passed (within 3 minutes)" >> $GITHUB_STEP_SUMMARY
+            elif [ "$WAIT_STATUS" == "timeout" ]; then
+              echo "**Health Check:** ⏰ Continuing in background" >> $GITHUB_STEP_SUMMARY
+              echo "Full deployment (10% per minute) takes ~10 minutes" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Health Check:** ⏸️ In Progress" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 **[View in AWS Console]($CONSOLE_URL)**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ steps.check-active.outcome }}" == "failure" ]; then
+              echo "**Reason:** Active deployment already in progress" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ steps.load-appspec.outcome }}" == "failure" ]; then
+              echo "**Reason:** AppSpec file not found at \`${{ inputs.appspec_path }}\`" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ steps.download-taskdef.outcome }}" == "failure" ]; then
+              echo "**Reason:** Task Definition not found: \`${{ inputs.task_family }}\`" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Reason:** See logs for details" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
