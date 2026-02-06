@@ -1,0 +1,157 @@
+name: Service Deployment (Master Orchestration)
+
+on:
+  workflow_call:
+    inputs:
+      # Service Identity
+      service_name:
+        description: 'Service name (e.g., identity, render)'
+        required: true
+        type: string
+      ecr_repository:
+        description: 'ECR repository name'
+        required: true
+        type: string
+      
+      # ECS Configuration
+      cluster_name:
+        description: 'ECS cluster name'
+        required: true
+        type: string
+      ecs_service_name:
+        description: 'ECS service name'
+        required: true
+        type: string
+      task_family:
+        description: 'ECS task definition family'
+        required: true
+        type: string
+      container_name:
+        description: 'Container name in task definition'
+        required: false
+        type: string
+        default: 'app'
+      container_port:
+        description: 'Container port'
+        required: false
+        type: number
+        default: 3000
+      
+      # CodeDeploy Configuration
+      codedeploy_application:
+        description: 'CodeDeploy application name'
+        required: true
+        type: string
+      codedeploy_deployment_group:
+        description: 'CodeDeploy deployment group name'
+        required: true
+        type: string
+      
+      # Optional Configuration
+      terraform_dir:
+        description: 'Path to terraform directory'
+        required: false
+        type: string
+        default: 'terraform'
+      skip_terraform:
+        description: 'Skip terraform deployment'
+        required: false
+        type: boolean
+        default: false
+      compose_files:
+        description: 'Docker compose files (space separated)'
+        required: false
+        type: string
+        default: 'docker-compose.yml docker-compose.ci.yml'
+      appspec_path:
+        description: 'Path to appspec.yaml'
+        required: false
+        type: string
+        default: 'terraform/appspec.yaml'
+      terraform_version:
+        description: 'Terraform version'
+        required: false
+        type: string
+        default: '1.7.0'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'eu-central-1'
+    
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+      NPM_TOKEN:
+        description: 'NPM token for release-it (if needed)'
+        required: false
+
+permissions:
+  id-token: write    # Required for OIDC
+  contents: write    # Required for release-it
+  packages: read     # Required for package access
+
+jobs:
+  # ============================================================================
+  # JOB 1: Release & ECR Push
+  # ============================================================================
+  release-ecr:
+    name: Release & Push to ECR
+    uses: ./.github/workflows/reusable-release-ecr.yml
+    with:
+      service_name: ${{ inputs.service_name }}
+      ecr_repository: ${{ inputs.ecr_repository }}
+      compose_files: ${{ inputs.compose_files }}
+      aws_region: ${{ inputs.aws_region }}
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ============================================================================
+  # JOB 2: Terraform Infrastructure (Optional)
+  # ============================================================================
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    needs: release-ecr
+    if: ${{ !inputs.skip_terraform }}
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      terraform_dir: ${{ inputs.terraform_dir }}
+      terraform_version: ${{ inputs.terraform_version }}
+      aws_region: ${{ inputs.aws_region }}
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+  # ============================================================================
+  # JOB 3: ECS CodeDeploy Blue/Green
+  # ============================================================================
+  deploy-ecs:
+    name: Deploy to ECS
+    needs: [release-ecr, deploy-infrastructure]
+    # Complex conditional:
+    # - Run even if previous jobs failed (always())
+    # - But only if release succeeded
+    # - And release created something
+    # - And infrastructure either succeeded or was skipped
+    if: |
+      always() && 
+      needs.release-ecr.result == 'success' &&
+      needs.release-ecr.outputs.has_release == 'true' &&
+      (needs.deploy-infrastructure.result == 'success' || 
+       needs.deploy-infrastructure.result == 'skipped')
+    uses: ./.github/workflows/reusable-ecs-codedeploy.yml
+    with:
+      cluster_name: ${{ inputs.cluster_name }}
+      service_name: ${{ inputs.ecs_service_name }}
+      task_family: ${{ inputs.task_family }}
+      container_name: ${{ inputs.container_name }}
+      container_port: ${{ inputs.container_port }}
+      ecr_repository: ${{ inputs.ecr_repository }}
+      image_tag: ${{ needs.release-ecr.outputs.version }}
+      codedeploy_application: ${{ inputs.codedeploy_application }}
+      codedeploy_deployment_group: ${{ inputs.codedeploy_deployment_group }}
+      appspec_path: ${{ inputs.appspec_path }}
+      aws_region: ${{ inputs.aws_region }}
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
