@@ -4,127 +4,237 @@ Centralized, reusable GitHub Actions workflows for all services.
 
 ## 🎯 Purpose
 
-This repository contains reusable workflows that can be called from any service repository to standardize CI/CD processes across the organization.
+This repository contains reusable workflows that standardize CI/CD processes across the organization, including:
+- CI testing with Docker Compose
+- Semantic versioning with release-it
+- Docker image builds and ECR deployment
+- Terraform infrastructure deployment
+- ECS Blue/Green deployments with CodeDeploy
 
 ## 📁 Structure
 
 ```
 github-workflows/
-├── .github/
-│   └── workflows/
-│       ├── reusable-ci.yml          # Reusable CI workflow
-│       └── reusable-deploy-ecr.yml  # ECR deployment workflow
+├── .github/workflows/
+│   ├── reusable-ci-docker.yml              # CI testing
+│   ├── reusable-release-ecr.yml            # Release + ECR push
+│   ├── reusable-terraform-deploy.yml       # Infrastructure deployment
+│   ├── reusable-ecs-codedeploy.yml         # ECS Blue/Green via CodeDeploy
+│   └── reusable-service-deployment.yml     # Master orchestration
+├── shared/
+│   └── .release-it.json                    # Release-it configuration
+├── examples/
+│   ├── deploy-ecr-with-release.md
+│   └── deploy-ecs-with-codedeploy.md       # Full deployment guide
 ├── README.md
 └── CHANGELOG.md
 ```
 
-## 🚀 Usage
+## 🚀 Quick Start
 
-### In Your Service Repository
+### Option 1: Complete Deployment (Recommended)
 
-Create workflow files in `.github/workflows/`:
+Use the master orchestration workflow for full deployment pipeline:
 
-**Development CI (feature branches):**
 ```yaml
-# .github/workflows/ci-development.yml
-name: CI - Development
+# .github/workflows/deploy.yml
+name: Deploy Service
 
 on:
   push:
-    branches: ['feature/**', 'bugfix/**', 'hotfix/**']
-  pull_request:
-    branches: ['main']
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  ci:
-    uses: ivodenwag/github-workflows/.github/workflows/reusable-ci.yml@main
-    with:
-      environment: development
-      run-tests: true
-      coverage-threshold: 70
-```
-
-**Production CI & Deployment (main branch & tags):**
-```yaml
-# .github/workflows/ci-production.yml
-name: CI/CD - Production
-
-on:
-  push:
-    branches: ['main']
-    tags: ['v*']
-
-jobs:
-  ci:
-    uses: ivodenwag/github-workflows/.github/workflows/reusable-ci.yml@main
-    with:
-      environment: production
-      run-tests: true
-      coverage-threshold: 80
-
   deploy:
-    needs: ci
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    uses: ivodenwag/github-workflows/.github/workflows/reusable-deploy-ecr.yml@main
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-service-deployment.yml@v2.0.0
     with:
-      environment: production
-      version: ${{ github.ref_name }}
-      ecr-repository: 'your-service-name'
-      aws-region: 'eu-central-1'
+      service_name: your-service
+      ecr_repository: your-service
+      cluster_name: your-cluster
+      ecs_service_name: your-ecs-service
+      task_family: your-task-family
+      container_name: your-container
+      codedeploy_application: your-codedeploy-app
+      codedeploy_deployment_group: your-deployment-group
     secrets:
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
-## 🔧 Workflow Inputs
+**See [examples/deploy-ecs-with-codedeploy.md](examples/deploy-ecs-with-codedeploy.md) for complete setup guide.**
 
-### `reusable-ci.yml`
+### Option 2: Individual Workflows
 
-| Input | Required | Type | Default | Description |
-|-------|----------|------|---------|-------------|
-| `environment` | ✅ | string | - | Environment: development, production |
-| `run-tests` | ❌ | boolean | `true` | Whether to run tests |
-| `coverage-threshold` | ❌ | number | `80` | Minimum test coverage percentage |
+Use atomic workflows for specific tasks:
 
-### `reusable-deploy-ecr.yml`
+```yaml
+# CI Testing only
+jobs:
+  test:
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-ci-docker.yml@v2.0.0
+    with:
+      service_name: your-service
 
-| Input | Required | Type | Default | Description |
-|-------|----------|------|---------|-------------|
-### Service Repository
+# Release + ECR only
+jobs:
+  release:
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-release-ecr.yml@v2.0.0
+    with:
+      service_name: your-service
+      ecr_repository: your-service
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+```
 
-Your service repository must have:
+## 🔧 Available Workflows
 
-- **Docker Compose** setup with service named `skeleton-service`
-- **Makefile** with these targets:
-  - `make install` - Install dependencies
-  - `make lint` - Lint code
-  - `make type-check` - Type check
-  - `make api-lint` - Validate OpenAPI spec (if applicable)
-  - `make test-coverage` - Run tests with coverage
-  - `make build` - Build application
-- **Dockerfile** at `.docker/Dockerfile` with stages: `builder`, `runner`
+### 1. CI Testing (`reusable-ci-docker.yml`)
 
-### AWS Setup (for deployment)
+Runs tests in Docker Compose environment.
 
-- ECR Repository created
-- AWS IAM User with permissions:
-  - `ecr:GetAuthorizationToken`
-  - `ecr:BatchCheckLayerAvailability`
-  - `ecr:PutImage`
-  - `ecr:InitiateLayerUpload`
-  - `ecr:UploadLayerPart`
-  - `ecr:CompleteLayerUpload`
+**Inputs:**
+- `compose_files` - Docker compose files (default: `docker-compose.yml docker-compose.ci.yml`)
+- `service_name` - Docker compose service name (required)
 
-Your service repository must have:
+**Usage:**
+```yaml
+uses: ivodenwag/github-workflows/.github/workflows/reusable-ci-docker.yml@v2.0.0
+with:
+  service_name: identity
+```
 
-- `Makefile` with these targets:
-  - `make install` - Install dependencies
-  - `make lint` - Lint code
-  - `make type-check` - Type check
-  - `make api-lint` - Validate OpenAPI spec (if applicable)
-  - `make test` - Run tests
-  - `make test-coverage` - Run tests with coverage
-  - `make build` - Build application
+---
+
+### 2. Release & ECR (`reusable-release-ecr.yml`)
+
+Creates semantic version release and pushes Docker image to ECR.
+
+**Inputs:**
+- `service_name` - Service name (required)
+- `ecr_repository` - ECR repository name (required)
+- `compose_files` - Docker compose files
+- `aws_region` - AWS region (default: `eu-central-1`)
+
+**Secrets:**
+- `AWS_ROLE_ARN` - IAM Role for OIDC (required)
+- `NPM_TOKEN` - NPM token (optional)
+
+**Outputs:**
+- `version` - Released version (e.g., `v1.2.3`)
+- `has_release` - Boolean if release was created
+
+---
+
+### 3. Terraform Deploy (`reusable-terraform-deploy.yml`)
+
+Deploys infrastructure via Terraform.
+
+**Inputs:**
+- `terraform_dir` - Path to terraform directory (default: `terraform`)
+- `terraform_version` - Terraform version (default: `1.7.0`)
+- `aws_region` - AWS region (default: `eu-central-1`)
+
+**Secrets:**
+- `AWS_ROLE_ARN` - IAM Role for OIDC (required)
+� Prerequisites
+
+### Service Repository Requirements
+
+- **Docker Compose** setup
+- **Makefile** with targets: `lint`, `type-check`, `test`, `build`
+- **Dockerfile** at `.docker/Dockerfile`
+- **Terraform** directory (if using infrastructure deployment)
+- **AppSpec** file at `terraform/appspec.yaml` (for ECS deployments)
+
+### AWS Requirements
+
+- ECR Repository
+- ECS Cluster + Service (with `deployment_controller.type = CODE_DEPLOY`)
+- CodeDeploy Application + Deployment Group
+- ALB with 2 Target Groups (Blue + Green)
+- IAM Role for GitHub OIDC authentication
+- AWS Secrets Manager (for application secrets)
+
+## 🔄 Versioning Strategy
+
+**Production (Recommended):**
+```yaml
+uses: ivodenwag/github-workflows/.github/workflows/reusable-service-deployment.yml@v2.0.0
+```
+
+**Development/Testing:**
+```yaml
+uses: ivodenwag/github-workflows/.github/workflows/reusable-service-deployment.yml@main
+```
+
+**Best Practice:** Pin to specific version tags (`@v2.0.0`) in production to avoid breaking changes.
+
+## 🔐 Security
+
+- **AWS OIDC Authentication**: No static credentials in GitHub Secrets
+- **Secrets Manager Integration**: Application secrets stored in AWS
+- **Service Ownership**: Each service controls its own appspec.yaml
+
+## 📊 Monitoring & Notifications
+
+**GitHub Email Notifications:**
+- Enabled by default in GitHub Settings → Notifications → Actions
+- Receive emails on workflow failures
+
+**Optional Slack Integration:**
+```yaml
+# Add to your workflow
+- name: Notify Slack
+  if: failure()
+  run: |
+    curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+      -d '{"text":"❌ Deployment failed"}'
+```required)
+- `container_port` - Container port (default: `3000`)
+- `ecr_repository` - ECR repository (required)
+- `image_tag` - Docker image tag (required)
+- `codedeploy_application` - CodeDeploy app name (required)
+- `codedeploy_deployment_group` - Deployment group (required)
+- `appspec_path` - Path to appspec.yaml (default: `terraform/appspec.yaml`)
+- `aws_region` - AWS region (default: `eu-central-1`)
+
+**Secrets:**
+- `AWS_ROLE_ARN` - IAM Role for OIDC (required)
+
+**Outputs:**
+- `deployment_id` - CodeDeploy deployment ID
+- `task_definition_arn` - New task definition ARN
+
+**Features:**
+- Active deployment check (prevents duplicates)
+- Task Definition update (preserves secrets)
+- Service ownership (loads appspec from service repo)
+- Hybrid wait strategy (3 min timeout)
+- AWS Console links
+
+---
+
+### 5. Master Orchestration (`reusable-service-deployment.yml`)
+
+Chains all workflows for complete deployment pipeline.
+
+**Inputs:** 13 inputs covering service, ECS, and CodeDeploy configuration
+
+**Secrets:**
+- `AWS_ROLE_ARN` - IAM Role for OIDC (required)
+- `NPM_TOKEN` - NPM token (optional)
+
+**Jobs:**
+1. `release-ecr` - Create version + push to ECR
+2. `deploy-infrastructure` - Terraform (optional, skip with `skip_terraform: true`)
+3. `deploy-ecs` - CodeDeploy Blue/Green
+
+**Features:**
+- Conditional execution
+- Error handling
+- Output passing between jobs
+
+**See:** [examples/deploy-ecs-with-codedeploy.md](examples/deploy-ecs-with-codedeploy.md)
 
 ## 🔄 Versioning
 
