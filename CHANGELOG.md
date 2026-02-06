@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-06
+
+### Added
+- **reusable-service-deployment.yml** - Master orchestration workflow
+- **reusable-terraform-deploy.yml** - Terraform infrastructure deployment
+- **reusable-ecs-codedeploy.yml** - ECS Blue/Green deployment via CodeDeploy
+- Complete ECS CodeDeploy integration with Blue/Green strategy
+- Active deployment check (prevents concurrent deployments)
+- Hybrid wait strategy (3 min initial health check + background)
+- Service ownership principle (services provide appspec.yaml)
+- Terraform plan artifact upload (30 days retention, audit trail)
+- AWS OIDC authentication (no static credentials)
+- Error handling with conditional job execution
+- GitHub Step Summaries for all workflows
+- AWS Console links in deployment summaries
+- Comprehensive documentation and examples
+
+### Changed
+- Service workflows now use master orchestration workflow
+- Simplified service repository workflow files (only configuration)
+- Task Definition updates preserve secrets (downloaded + image update only)
+- Workflow versioning best practice (@v2.0.0 instead of @main)
+
+### Documentation
+- Added examples/deploy-ecs-with-codedeploy.md (complete guide)
+- Updated README.md with all workflow descriptions
+- Added workflow versioning strategy
+- Added security and monitoring sections
+- Services must provide terraform/appspec.yaml (Service Ownership)
+
 ## [Unreleased]
 
 ### Changed
