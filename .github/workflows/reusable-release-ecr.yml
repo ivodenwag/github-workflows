@@ -33,6 +33,10 @@ on:
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
         required: false
+    outputs:
+      version:
+        description: 'Released version tag (e.g., 0.1.1)'
+        value: ${{ jobs.deploy.outputs.version }}
 
 permissions:
   id-token: write    # Required for OIDC
@@ -131,6 +135,8 @@ jobs:
     needs: [test, release]
     if: always() && needs.test.result == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: 🏷️ Determine version
@@ -174,7 +180,6 @@ jobs:
           
           # Tag for ECR
           docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
-          docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
       - name: 🚀 Push to ECR
         env:
@@ -183,11 +188,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
-          echo "✅ Pushed images:"
+          echo "✅ Pushed image:"
           echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION"
-          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
       - name: 📊 Image summary
         env:
@@ -201,6 +204,5 @@ jobs:
           echo "**Registry:** \`$ECR_REGISTRY\`" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** \`$ECR_REPOSITORY\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY
