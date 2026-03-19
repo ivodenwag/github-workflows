@@ -21,6 +21,21 @@ on:
         required: false
         type: string
         default: 'production'
+      run_smoke_tests:
+        description: 'Run smoke tests on production image before push'
+        required: false
+        type: boolean
+        default: true
+      health_check_path:
+        description: 'Health check endpoint path'
+        required: false
+        type: string
+        default: '/api/health'
+      container_port:
+        description: 'Container port for smoke tests'
+        required: false
+        type: number
+        default: 3000
     secrets:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
@@ -77,6 +92,71 @@ jobs:
           echo "✅ Built image with target: $TARGET"
           echo "📦 Tagged as: $VERSION"
 
+      - name: 🧪 Smoke Test Production Image
+        id: smoke-test
+        if: ${{ inputs.run_smoke_tests }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CONTAINER_PORT: ${{ inputs.container_port }}
+          HEALTH_PATH: ${{ inputs.health_check_path }}
+        run: |
+          echo "🧪 Running smoke tests on production image..."
+          
+          # Start container
+          docker run -d \
+            -p $CONTAINER_PORT:$CONTAINER_PORT \
+            --name smoke-test-${{ inputs.service_name }} \
+            ${{ inputs.service_name }}:$VERSION
+          
+          # Wait for container to be ready (max 30 seconds)
+          echo "⏳ Waiting for container to start..."
+          for i in {1..30}; do
+            if docker ps | grep -q smoke-test-${{ inputs.service_name }}; then
+              echo "✅ Container is running"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Additional startup time
+          sleep 5
+          
+          # Test 1: Health Check
+          echo "🔍 Testing health endpoint: http://localhost:$CONTAINER_PORT$HEALTH_PATH"
+          if curl -f -s -o /dev/null -w "%{http_code}" http://localhost:$CONTAINER_PORT$HEALTH_PATH | grep -q "200"; then
+            echo "✅ Health check passed (200 OK)"
+          else
+            echo "❌ Health check failed"
+            docker logs smoke-test-${{ inputs.service_name }}
+            docker stop smoke-test-${{ inputs.service_name }}
+            docker rm smoke-test-${{ inputs.service_name }}
+            exit 1
+          fi
+          
+          # Test 2: Root endpoint
+          echo "🔍 Testing root endpoint: http://localhost:$CONTAINER_PORT/"
+          if curl -f -s -o /dev/null -w "%{http_code}" http://localhost:$CONTAINER_PORT/ | grep -q "200"; then
+            echo "✅ Root endpoint passed (200 OK)"
+          else
+            echo "⚠️ Root endpoint returned non-200 (may be expected)"
+          fi
+          
+          # Test 3: Container logs check
+          echo "📋 Checking container logs for errors..."
+          if docker logs smoke-test-${{ inputs.service_name }} 2>&1 | grep -qi "error\|exception\|fatal"; then
+            echo "⚠️ Found error messages in logs (review required)"
+            docker logs smoke-test-${{ inputs.service_name }}
+          else
+            echo "✅ No critical errors in logs"
+          fi
+          
+          # Cleanup
+          echo "🧹 Cleaning up smoke test container..."
+          docker stop smoke-test-${{ inputs.service_name }}
+          docker rm smoke-test-${{ inputs.service_name }}
+          
+          echo "✅ Smoke tests passed! Production image verified."
+
       - name: 🚀 Push to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -91,22 +171,43 @@ jobs:
           echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
       - name: 📊 Deployment Summary
+        if: always()
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          echo "### 🚀 ECR Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 ECR Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Service:** \`${{ inputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Smoke Tests Status
+          if [ "${{ inputs.run_smoke_tests }}" == "true" ]; then
+            if [ "${{ steps.smoke-test.outcome }}" == "success" ]; then
+              echo "**Smoke Tests:** ✅ Passed" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ steps.smoke-test.outcome }}" == "failure" ]; then
+              echo "**Smoke Tests:** ❌ Failed (ECR push skipped)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Smoke Tests:** ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Smoke Tests:** ⏭️ Disabled" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "- CodeDeploy will automatically use the \`:latest\` tag" >> $GITHUB_STEP_SUMMARY
-          echo "- Or trigger deployment manually with specific version tag" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "**Images Pushed:**" >> $GITHUB_STEP_SUMMARY
+            echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "- CodeDeploy can use the \`:latest\` tag" >> $GITHUB_STEP_SUMMARY
+            echo "- Or specify version tag: \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ❌ Deployment failed" >> $GITHUB_STEP_SUMMARY
+          fi
