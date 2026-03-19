@@ -192,12 +192,24 @@ jobs:
         id: create-deployment
         run: |
           echo "Creating CodeDeploy deployment..."
+          
+          # Create revision JSON with proper escaping
+          APPSPEC_CONTENT=$(cat appspec.yaml)
+          REVISION_JSON=$(jq -n \
+            --arg content "$APPSPEC_CONTENT" \
+            '{
+              revisionType: "AppSpecContent",
+              appSpecContent: {
+                content: $content
+              }
+            }')
+          
           DEPLOYMENT_ID=$(aws deploy create-deployment \
             --application-name ${{ inputs.codedeploy_application }} \
             --deployment-group-name ${{ inputs.codedeploy_deployment_group }} \
             --deployment-config-name CodeDeployDefault.ECSLinear10PercentEvery1Minutes \
             --description "Deploy ${{ inputs.image_tag }} via GitHub Actions" \
-            --revision "{\"revisionType\":\"AppSpecContent\",\"appSpecContent\":{\"content\":\"$(cat appspec.yaml | jq -Rs .)\"}}" \
+            --revision "$REVISION_JSON" \
             --query 'deploymentId' \
             --output text)
           
