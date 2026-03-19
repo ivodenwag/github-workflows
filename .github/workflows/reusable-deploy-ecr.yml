@@ -1,0 +1,112 @@
+name: Deploy to ECR
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: 'Docker compose service name'
+        required: true
+        type: string
+      ecr_repository:
+        description: 'ECR repository name'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'eu-central-1'
+      docker_target:
+        description: 'Docker build target (stage name)'
+        required: false
+        type: string
+        default: 'production'
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Generate version tag
+        id: version
+        run: |
+          # Format: branch-shortsha (e.g., main-a3d2f1c)
+          BRANCH="${{ github.ref_name }}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          VERSION="${BRANCH}-${SHORT_SHA}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: 🔐 Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: 🔑 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🐳 Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ inputs.docker_target }}
+        run: |
+          docker build \
+            --file docker/Dockerfile \
+            --target $TARGET \
+            --tag ${{ inputs.service_name }}:$VERSION \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+          
+          echo "✅ Built image with target: $TARGET"
+          echo "📦 Tagged as: $VERSION"
+
+      - name: 🚀 Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "✅ Pushed images:"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: 📊 Deployment Summary
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "### 🚀 ECR Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** \`${{ inputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "- CodeDeploy will automatically use the \`:latest\` tag" >> $GITHUB_STEP_SUMMARY
+          echo "- Or trigger deployment manually with specific version tag" >> $GITHUB_STEP_SUMMARY
