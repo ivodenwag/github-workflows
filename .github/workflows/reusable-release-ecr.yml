@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: 'eu-central-1'
+      skip_tests:
+        description: 'Skip lint, type-check, build, and test steps (useful for deploy-only workflows)'
+        required: false
+        type: boolean
+        default: false
     secrets:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
@@ -56,15 +61,19 @@ jobs:
         run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
 
       - name: 🔍 Type check
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
 
       - name: 🏗️ Build
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
 
       - name: 🧪 Test
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
 
   release:
