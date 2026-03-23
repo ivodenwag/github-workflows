@@ -45,6 +45,11 @@ on:
         required: false
         type: string
         default: 'terraform/appspec.yaml'
+      deployment_config:
+        description: 'CodeDeploy deployment config (e.g. ECSLinear10PercentEvery1Minutes, ECSAllAtOnce)'
+        required: false
+        type: string
+        default: 'CodeDeployDefault.ECSLinear10PercentEvery1Minutes'
       aws_region:
         description: 'AWS region'
         required: false
@@ -207,7 +212,7 @@ jobs:
           DEPLOYMENT_ID=$(aws deploy create-deployment \
             --application-name ${{ inputs.codedeploy_application }} \
             --deployment-group-name ${{ inputs.codedeploy_deployment_group }} \
-            --deployment-config-name CodeDeployDefault.ECSLinear10PercentEvery1Minutes \
+            --deployment-config-name ${{ inputs.deployment_config }} \
             --description "Deploy ${{ inputs.image_tag }} via GitHub Actions" \
             --revision "$REVISION_JSON" \
             --query 'deploymentId' \
@@ -296,3 +301,9 @@ jobs:
               echo "**Reason:** See logs for details" >> $GITHUB_STEP_SUMMARY
             fi
           fi
+
+      - name: ✅ Fail on deployment error
+        if: steps.wait-deployment.outputs.status == 'error'
+        run: |
+          echo "❌ Deployment failed - check AWS CodeDeploy console for details"
+          exit 1
