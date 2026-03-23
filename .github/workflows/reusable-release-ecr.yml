@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: 'eu-central-1'
+      skip_tests:
+        description: 'Skip lint, type-check, build, and test steps (useful for deploy-only workflows)'
+        required: false
+        type: boolean
+        default: false
     secrets:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
@@ -28,6 +33,10 @@ on:
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
         required: false
+    outputs:
+      version:
+        description: 'Released version tag (e.g., 0.1.1)'
+        value: ${{ jobs.deploy.outputs.version }}
 
 permissions:
   id-token: write    # Required for OIDC
@@ -56,20 +65,25 @@ jobs:
         run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
 
       - name: 🔍 Type check
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
 
       - name: 🏗️ Build
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
 
       - name: 🧪 Test
+        if: ${{ !inputs.skip_tests }}
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
 
   release:
     name: Create Release
     needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -118,15 +132,29 @@ jobs:
 
   deploy:
     name: Deploy to ECR
-    needs: release
-    if: needs.release.outputs.has_release == 'true'
+    needs: [test, release]
+    if: always() && needs.test.result == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
+      - name: 🏷️ Determine version
+        id: version
+        run: |
+          if [ "${{ needs.release.outputs.has_release }}" == "true" ]; then
+            VERSION="${{ needs.release.outputs.version }}"
+            echo "📦 Using release version: $VERSION"
+          else
+            VERSION="${{ github.ref_name }}-${GITHUB_SHA::8}"
+            echo "🔧 Using branch version: $VERSION (no release created)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.outputs.version }}
+          ref: ${{ needs.release.outputs.version || github.sha }}
 
       - name: 🔐 Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -142,7 +170,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Build image with docker-compose (uses explicit image name from compose file)
           VERSION=$VERSION docker compose -f docker-compose.yml build ${{ inputs.service_name }}
@@ -152,26 +180,23 @@ jobs:
           
           # Tag for ECR
           docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
-          docker tag ${{ inputs.service_name }}:$VERSION $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
       - name: 🚀 Push to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
-          echo "✅ Pushed images:"
+          echo "✅ Pushed image:"
           echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$VERSION"
-          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
       - name: 📊 Image summary
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           echo "### 🐳 Docker Image Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -179,6 +204,5 @@ jobs:
           echo "**Registry:** \`$ECR_REGISTRY\`" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** \`$ECR_REPOSITORY\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:**" >> $GITHUB_STEP_SUMMARY
           echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`$ECR_REGISTRY/$ECR_REPOSITORY:latest\`" >> $GITHUB_STEP_SUMMARY

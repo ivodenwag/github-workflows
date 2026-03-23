@@ -3,13 +3,16 @@
   "git": {
     "commitMessage": "chore: release ${version}",
     "tagName": "${version}",
+    "tagAnnotation": "Release ${version}",
+    "tagPrefix": "",
     "requireBranch": "main",
-    "requireCleanWorkingDir": false
+    "requireCleanWorkingDir": true
   },
   "github": {
     "release": true,
     "releaseName": "Release ${version}"
   },
+  "increment": "conventional",
   "npm": {
     "publish": false
   },
