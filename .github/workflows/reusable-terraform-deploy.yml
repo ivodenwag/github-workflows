@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default: 'eu-central-1'
+      use_ssh_agent:
+        description: 'Whether to setup SSH agent for private Terraform modules'
+        required: false
+        type: boolean
+        default: false
     secrets:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
@@ -51,8 +56,8 @@ jobs:
         with:
           fetch-depth: 0  # Full history for potential git-based logic
 
-      - name: � Setup SSH for private Terraform modules
-        if: ${{ secrets.TF_MODULES_SSH_KEY != '' }}
+      - name: 🔑 Setup SSH for private Terraform modules
+        if: ${{ inputs.use_ssh_agent }}
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.TF_MODULES_SSH_KEY }}
