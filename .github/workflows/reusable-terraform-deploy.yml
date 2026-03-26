@@ -30,9 +30,6 @@ on:
       TF_MODULES_SSH_KEY:
         description: 'SSH private key for cloning private Terraform modules (Deploy Key)'
         required: false
-      TF_VARS_JSON:
-        description: 'JSON string of Terraform variables, e.g. {"api_key":"val","jwt_secret":"val"}'
-        required: false
     outputs:
       terraform_outputs:
         description: 'JSON string of terraform outputs'
@@ -85,9 +82,6 @@ jobs:
           terraform_version: ${{ inputs.terraform_version }}
           terraform_wrapper: true  # Enables outputs capture
 
-      - name: � Write Terraform Variables
-        if: ${{ secrets.TF_VARS_JSON != '' }}
-        run: echo '${{ secrets.TF_VARS_JSON }}' > terraform.auto.tfvars.json
 
       - name: �🔧 Terraform Init
         id: init
