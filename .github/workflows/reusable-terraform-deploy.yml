@@ -22,6 +22,9 @@ on:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
         required: true
+      TF_MODULES_SSH_KEY:
+        description: 'SSH private key for cloning private Terraform modules (Deploy Key)'
+        required: false
     outputs:
       terraform_outputs:
         description: 'JSON string of terraform outputs'
@@ -48,7 +51,13 @@ jobs:
         with:
           fetch-depth: 0  # Full history for potential git-based logic
 
-      - name: 🔐 Configure AWS credentials
+      - name: � Setup SSH for private Terraform modules
+        if: ${{ secrets.TF_MODULES_SSH_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.TF_MODULES_SSH_KEY }}
+
+      - name: �🔐 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
