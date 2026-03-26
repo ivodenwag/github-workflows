@@ -1,53 +1,88 @@
-# .ai Documentation - GitHub Workflows
+# .ai Documentation — github-workflows
 
 **Purpose**: Reusable CI/CD Workflows for all tec42 Services  
-**Last Updated**: 6. Februar 2026  
-**Status**: Active Development
+**Version**: 1.0.0  
+**Last Updated**: 26. März 2026
 
 ---
 
-## 📚 Navigation
+## Quick Navigation
 
-### Start Here
-- [Quick Start](context/00-quick-start.md) - Get started in 5 minutes
-- [Overview](context/01-overview.md) - What are these workflows?
-- [Architecture](context/02-architecture.md) - Workflow design & orchestration
+### Getting Started
+- [Quick Start](context/00-quick-start.md) — Get started in 5 minutes
+- [Overview](context/01-overview.md) — What are these workflows?
+- [Architecture](context/02-architecture.md) — Workflow design & orchestration
 
 ### Core Documentation
-- [Tech Stack](context/03-tech-stack.md) - GitHub Actions, AWS, Tools
-- [Principles](context/04-principles.md) - Workflow best practices
-- [Features](context/05-features.md) - What these workflows provide
-- [Project Structure](context/06-project-structure.md) - File organization
-- [Development](context/07-development.md) - How to create new workflows
+- [Tech Stack](context/03-tech-stack.md) — GitHub Actions, AWS, Tools
+- [Principles](context/04-principles.md) — Workflow best practices
+- [Project Structure](context/06-project-structure.md) — File organization
+- [Development](context/07-development.md) — How to create new workflows
 
 ### Reference
-- [Troubleshooting](context/10-troubleshooting.md) - Common issues
-- [Glossary](context/99-glossary.md) - Terms & Concepts
+- [Troubleshooting](context/10-troubleshooting.md) — Common issues
+- [Glossary](context/99-glossary.md) — Terms & Concepts
 
 ---
 
-## 🎯 Quick Links
+## Scenarios
 
-### For Developers
-- **First time?** → [Quick Start](context/00-quick-start.md)
-- **Understanding workflows?** → [Architecture](context/02-architecture.md)
-- **Adding to a service?** → [Usage Examples](../examples/)
+### CI Testing
+- [CI Scenarios](scenarios/ci-scenarios.md) — Test execution patterns
+
+### Release & Deployment
+- [Release ECR Scenarios](scenarios/release-ecr-scenarios.md) — Versioning & ECR push
+- [Terraform Scenarios](scenarios/terraform-scenarios.md) — Infrastructure deployment
+- [ECS CodeDeploy Scenarios](scenarios/ecs-codedeploy-scenarios.md) — Blue/Green deployments
+- [Orchestration Scenarios](scenarios/orchestration-scenarios.md) — Full pipeline
+
+---
+
+## Workflows (Development Guides)
+
+- [Add Workflow](workflows/add-workflow.md) — Create new reusable workflow
+- [Add Composite Action](workflows/add-composite-action.md) — Create reusable action
+
+---
+
+## Quick Links
 
 ### For Service Teams
-- **Deploy to ECR?** → [ECR Deployment Example](../examples/deploy-ecr-with-release.md)
-- **ECS CodeDeploy?** → [ECS CodeDeploy Example](../examples/deploy-ecs-with-codedeploy.md)
-- **Terraform?** → [Terraform Deployment](context/07-development.md#terraform-workflow)
+- **Deploy to ECR?** → [Release ECR Scenarios](scenarios/release-ecr-scenarios.md)
+- **ECS CodeDeploy?** → [ECS CodeDeploy Scenarios](scenarios/ecs-codedeploy-scenarios.md)
+- **Full pipeline?** → [Orchestration Scenarios](scenarios/orchestration-scenarios.md)
 
-### Related Documentation
-- [Service Deployment Architecture](../../../Management/Architecture/Service-Deployment.md)
-- [AWS Platform Architecture](../../../Management/Architecture/AWS-Architecture-v2.0-Final.md)
-- [IaC Architecture](../../../Management/Architecture/IaC-Architecture.md)
+### For Workflow Developers
+- **Create workflow?** → [Add Workflow](workflows/add-workflow.md)
+- **Troubleshooting?** → [Troubleshooting](context/10-troubleshooting.md)
 
 ---
 
-## 📋 What is Documented Here?
+## File Structure
 
-This `.ai/` directory contains:
+```
+.ai/
+├── README.md                           # This file
+├── context/
+│   ├── 00-quick-start.md              # Getting started
+│   ├── 01-overview.md                 # Project overview
+│   ├── 02-architecture.md             # System architecture
+│   ├── 03-tech-stack.md               # Technologies
+│   ├── 04-principles.md               # Best practices
+│   ├── 06-project-structure.md        # File organization
+│   ├── 07-development.md              # Development guide
+│   ├── 10-troubleshooting.md          # Common issues
+│   └── 99-glossary.md                 # Terminology
+├── scenarios/
+│   ├── ci-scenarios.md                # CI testing
+│   ├── release-ecr-scenarios.md       # Release & ECR
+│   ├── terraform-scenarios.md         # Infrastructure
+│   ├── ecs-codedeploy-scenarios.md    # ECS deployment
+│   └── orchestration-scenarios.md     # Full pipeline
+└── workflows/
+    ├── add-workflow.md                # Create workflow
+    └── add-composite-action.md        # Create action
+```
 - ✅ Reusable GitHub Actions workflows
 - ✅ CI/CD pipeline design
 - ✅ Release automation (release-it)

@@ -1,103 +1,101 @@
-# Quick Start - GitHub Workflows
+# Quick Start — github-workflows
 
-**Goal**: Understand reusable workflows in 5 minutes  
-**Audience**: Developers using these workflows  
-**Scope**: github-workflows repository only
-
----
-
-## 🎯 What This Repository Provides
-
-This repository contains **reusable GitHub Actions workflows** that can be called from service repositories.
-
-### **Available Workflows:**
-
-1. **CI Testing** - `reusable-ci-docker.yml`
-2. **Release & ECR** - `reusable-release-ecr.yml`
-3. **Terraform Deploy** - `reusable-terraform-deploy.yml` (in development)
-4. **ECS CodeDeploy** - `reusable-ecs-codedeploy.yml` (in development)
-5. **Master Orchestration** - `reusable-service-deployment.yml` (in development)
+**Version**: 1.0.0  
+**Last Updated**: 26. März 2026
 
 ---
 
-## 📋 Workflow Inputs & Outputs
+## Prerequisites
 
-### **1. reusable-ci-docker.yml**
-
-**Purpose**: Run tests in Docker Compose environment
-
-**Inputs:**
-```yaml
-compose_files:     # Docker compose files (space separated)
-  type: string
-  default: 'docker-compose.yml docker-compose.ci.yml'
-
-service_name:      # Docker compose service name
-  type: string
-  required: true
-```
-
-**Secrets:** None required
-
-**Outputs:** None (pass/fail)
+- GitHub repository with Actions enabled
+- AWS account with OIDC provider configured
+- IAM Role with trust policy for GitHub Actions
 
 ---
 
-### **2. reusable-release-ecr.yml**
+## Quick Start (Full Deployment)
 
-**Purpose**: Create semantic version release + push Docker image to ECR
+Add to your service repository:
 
-**Inputs:**
 ```yaml
-compose_files:     # Docker compose files
-  type: string
-  default: 'docker-compose.yml docker-compose.ci.yml'
+# .github/workflows/deploy.yml
+name: Deploy Service
 
-service_name:      # Docker compose service name
-  type: string
-  required: true
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-ecr_repository:    # ECR repository name
-  type: string
-  required: true
-
-aws_region:        # AWS region
-  type: string
-  default: 'eu-central-1'
-```
-
-**Secrets:**
-```yaml
-AWS_ROLE_ARN:      # IAM Role ARN for OIDC
-  required: true
-
-NPM_TOKEN:         # NPM token (optional)
-  required: false
-```
-
-**Outputs:**
-```yaml
-version:           # Released version (e.g., v1.2.3)
-has_release:       # Boolean if release was created
+jobs:
+  deploy:
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-service-deployment.yml@v2.0.0
+    with:
+      service_name: your-service
+      ecr_repository: your-service
+      cluster_name: tec42-cluster
+      ecs_service_name: tec42-your-service
+      task_family: tec42-your-task
+      container_name: your-container
+      codedeploy_application: tec42-your-app
+      codedeploy_deployment_group: tec42-your-dg
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
 ---
 
-### **3. reusable-terraform-deploy.yml** (In Development)
+## Available Workflows
 
-**Purpose**: Deploy infrastructure via Terraform
+| Workflow | Purpose | Key Inputs |
+|----------|---------|------------|
+| `reusable-ci-docker.yml` | Run tests | `service_name` |
+| `reusable-release-ecr.yml` | Release + ECR push | `service_name`, `ecr_repository` |
+| `reusable-terraform-deploy.yml` | Terraform apply | `terraform_dir` |
+| `reusable-ecs-codedeploy.yml` | ECS Blue/Green | `cluster_name`, `image_tag` |
+| `reusable-service-deployment.yml` | Full pipeline | 13 inputs |
 
-**Inputs:**
+---
+
+## CI Only (Testing)
+
 ```yaml
-terraform_dir:     # Path to terraform directory
-  type: string
-  default: 'terraform'
+jobs:
+  test:
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-ci-docker.yml@v2.0.0
+    with:
+      service_name: your-service
+```
 
-terraform_version: # Terraform version
-  type: string
-  default: '1.7.0'
+---
 
-aws_region:        # AWS region
+## Release + ECR Only
+
+```yaml
+jobs:
+  release:
+    uses: ivodenwag/github-workflows/.github/workflows/reusable-release-ecr.yml@v2.0.0
+    with:
+      service_name: your-service
+      ecr_repository: your-service
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+```
+
+---
+
+## Versioning
+
+| Environment | Reference | Example |
+|-------------|-----------|---------|
+| Production | Specific version | `@v2.0.0` |
+| Staging | Major version | `@v2` |
+| Development | Branch | `@main` |
+
+---
+
+## Further Documentation
+
+[Overview](01-overview.md) | [Architecture](02-architecture.md) | [Tech Stack](03-tech-stack.md)
   type: string
   default: 'eu-central-1'
 ```

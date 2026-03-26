@@ -1,153 +1,102 @@
-# Overview - GitHub Workflows
+# Project Overview — github-workflows
 
-**What**: Reusable CI/CD workflows for tec42 microservices  
-**Why**: Standardize deployments across all services  
-**How**: GitHub Actions with workflow_call pattern
-
----
-
-## 🎯 Purpose
-
-This repository provides **reusable GitHub Actions workflows** that can be called from any service repository to:
-- ✅ Run CI tests (lint, type-check, build, test)
-- ✅ Create semantic version releases
-- ✅ Build & push Docker images to ECR
-- ✅ Deploy infrastructure via Terraform
-- ✅ Deploy services to ECS via CodeDeploy Blue/Green
+**Version**: 1.0.0  
+**Last Updated**: 26. März 2026
 
 ---
 
-## 🏗️ Workflow Architecture
+## Purpose
+
+Centralized, reusable GitHub Actions workflows for all tec42 microservices. This repository standardizes CI/CD processes including testing, releasing, and deployment.
+
+---
+
+## What This Repository Provides
+
+| Capability | Workflow | Status |
+|------------|----------|--------|
+| CI Testing | `reusable-ci-docker.yml` | ✅ Production |
+| Release + ECR Push | `reusable-release-ecr.yml` | ✅ Production |
+| Terraform Deploy | `reusable-terraform-deploy.yml` | ✅ Production |
+| ECS CodeDeploy | `reusable-ecs-codedeploy.yml` | ✅ Production |
+| Full Pipeline | `reusable-service-deployment.yml` | ✅ Production |
+
+---
+
+## Technologies
+
+| Technology | Purpose |
+|------------|---------|
+| GitHub Actions | CI/CD platform |
+| AWS OIDC | Secure authentication (no static credentials) |
+| release-it | Semantic versioning |
+| Docker | Container builds |
+| Terraform | Infrastructure deployment |
+| CodeDeploy | Blue/Green ECS deployments |
+
+---
+
+## Structure
+
+```
+github-workflows/
+├── .github/workflows/
+│   ├── reusable-ci-docker.yml           # CI testing
+│   ├── reusable-release-ecr.yml         # Release + ECR
+│   ├── reusable-terraform-deploy.yml    # Terraform
+│   ├── reusable-ecs-codedeploy.yml      # ECS deployment
+│   └── reusable-service-deployment.yml  # Orchestration
+├── shared/
+│   └── .release-it.json                 # Release config
+├── examples/
+│   ├── deploy-ecr-with-release.md
+│   └── deploy-ecs-with-codedeploy.md
+├── .ai/                                 # Documentation
+├── README.md
+└── CHANGELOG.md
+```
+
+---
+
+## Workflow Coverage
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│         github-workflows Repository                     │
-│         (THIS REPO - Reusable workflows only)           │
+│  Atomic Workflows (Building Blocks)                     │
 │                                                         │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Atomic Workflows (Individual tasks)             │  │
-│  │                                                   │  │
-│  │  reusable-ci-docker.yml                          │  │
-│  │  reusable-release-ecr.yml                        │  │
-│  │  reusable-terraform-deploy.yml                   │  │
-│  │  reusable-ecs-codedeploy.yml                     │  │
-│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │ CI Testing   │  │ Release+ECR  │  │ Terraform    │  │
+│  │ lint         │  │ release-it   │  │ init         │  │
+│  │ type-check   │  │ docker build │  │ plan         │  │
+│  │ build        │  │ ECR push     │  │ apply        │  │
+│  │ test         │  │              │  │              │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
 │                                                         │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Orchestration Workflow (Combines atomic)        │  │
-│  │                                                   │  │
-│  │  reusable-service-deployment.yml                 │  │
-│  │  └─> Chains: release → terraform → codedeploy    │  │
-│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────┐                                      │
+│  │ ECS Deploy   │                                      │
+│  │ task def     │                                      │
+│  │ appspec      │                                      │
+│  │ codedeploy   │                                      │
+│  └──────────────┘                                      │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  Orchestration (Master Workflow)                        │
 │                                                         │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Supporting Files                                │  │
-│  │                                                   │  │
-│  │  shared/.release-it.json                         │  │
-│  │  shared/appspec-template.yaml                    │  │
-│  └──────────────────────────────────────────────────┘  │
+│  reusable-service-deployment.yml                        │
+│  ┌─────────┐ → ┌───────────┐ → ┌─────────────┐         │
+│  │ Release │   │ Terraform │   │ ECS Deploy  │         │
+│  │ + ECR   │   │ (optional)│   │ (CodeDeploy)│         │
+│  └─────────┘   └───────────┘   └─────────────┘         │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Scope**: This documentation covers ONLY the workflows in this repository.  
-**Service Integration**: See `examples/` directory for usage in service repos.
-
 ---
 
-## 📦 Available Workflows
+## Further Documentation
 
-### **1. CI Testing (reusable-ci-docker.yml)**
-
-**Purpose**: Run tests in Docker Compose environment
-
-**Features**:
-- Docker Compose based testing
-- Parallel services (DB, Redis, etc.)
-- Makefile-driven commands
-- Dummy secrets for CI
-
-**Usage** (in service repository):
-```yaml
-uses: ivodenwag/github-workflows/.github/workflows/reusable-ci-docker.yml@main
-with:
-  service_name: identity
-  compose_files: 'docker-compose.yml docker-compose.ci.yml'
-```
-
-**What it does**:
-- Runs `make lint`
-- Runs `make type-check`
-- Runs `make build`
-- Runs `make test`
-
----
-
-### **2. Release & ECR Push (reusable-release-ecr.yml)**
-
-**Purpose**: Semantic versioning + Docker image deployment
-
-**Features**:
-- Conventional Commits analysis
-- Automatic version bumping
-- Git tag & GitHub release creation
-- Docker build & push to ECR
-- OIDC authentication (no access keys!)
-
-**Usage** (in service repository):
-```yaml
-uses: ivodenwag/github-workflows/.github/workflows/reusable-release-ecr.yml@main
-with:
-  service_name: identity
-  ecr_repository: identity
-secrets:
-  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-```
-
-**What it does**:
-- Analyzes commits (conventional commits)
-- Creates version (semantic versioning)
-- Creates git tag & GitHub release
-- Builds Docker image
-- Pushes to ECR with version tag + latest
-
-**Outputs**:
-- `version` - New version tag (e.g., v1.2.3)
-- `has_release` - Boolean if release was created
-
----
-
-### **3. Terraform Deployment (reusable-terraform-deploy.yml)** 🚧
-
-**Purpose**: Deploy static infrastructure
-
-**Features**:
-- Terraform in container
-- S3 backend state management
-- Plan & Apply
-- Output extraction
-
-**Usage** (in service repository):
-```yaml
-uses: ivodenwag/github-workflows/.github/workflows/reusable-terraform-deploy.yml@main
-with:
-  terraform_dir: terraform
-  aws_region: eu-central-1
-secrets:
-  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-```
-
-**What it does**:
-- Runs `terraform init`
-- Runs `terraform plan -out=tfplan` (saves plan to file)
-- Uploads plan as GitHub artifact (audit trail)
-- Runs `terraform apply tfplan` (executes saved plan)
-- Exports terraform outputs
-
-**Status**: In Development
-
----
-
-### **4. ECS CodeDeploy (reusable-ecs-codedeploy.yml)** 🚧
+[Quick Start](00-quick-start.md) | [Architecture](02-architecture.md) | [Tech Stack](03-tech-stack.md)
 
 **Purpose**: Blue/Green ECS deployments
 
