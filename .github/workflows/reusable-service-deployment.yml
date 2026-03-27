@@ -140,6 +140,7 @@ jobs:
       terraform_version: ${{ inputs.terraform_version }}
       aws_region: ${{ inputs.aws_region }}
       use_ssh_agent: ${{ inputs.use_ssh_agent }}
+      image_tag: ${{ needs.release-ecr.outputs.version }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       TF_MODULES_SSH_KEY: ${{ secrets.TF_MODULES_SSH_KEY }}
