@@ -78,6 +78,11 @@ on:
         required: false
         type: string
         default: 'eu-central-1'
+      use_ssh_agent:
+        description: 'Whether to setup SSH agent for private Terraform modules'
+        required: false
+        type: boolean
+        default: false
     
     secrets:
       AWS_ROLE_ARN:
@@ -85,6 +90,9 @@ on:
         required: true
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
+        required: false
+      TF_MODULES_SSH_KEY:
+        description: 'SSH private key for cloning private Terraform modules'
         required: false
 
 permissions:
@@ -120,8 +128,10 @@ jobs:
       terraform_dir: ${{ inputs.terraform_dir }}
       terraform_version: ${{ inputs.terraform_version }}
       aws_region: ${{ inputs.aws_region }}
+      use_ssh_agent: ${{ inputs.use_ssh_agent }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      TF_MODULES_SSH_KEY: ${{ secrets.TF_MODULES_SSH_KEY }}
 
   # ============================================================================
   # JOB 3: ECS CodeDeploy Blue/Green
