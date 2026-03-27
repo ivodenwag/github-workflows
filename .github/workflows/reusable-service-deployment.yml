@@ -53,6 +53,11 @@ on:
         required: false
         type: string
         default: 'terraform'
+      skip_tests:
+        description: 'Skip lint, type-check, build, and test steps (tests already ran in CI)'
+        required: false
+        type: boolean
+        default: false
       skip_terraform:
         description: 'Skip terraform deployment'
         required: false
@@ -117,6 +122,7 @@ jobs:
       ecr_repository: ${{ inputs.ecr_repository }}
       compose_files: ${{ inputs.compose_files }}
       aws_region: ${{ inputs.aws_region }}
+      skip_tests: ${{ inputs.skip_tests }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
