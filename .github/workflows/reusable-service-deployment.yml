@@ -83,6 +83,11 @@ on:
         required: false
         type: boolean
         default: false
+      secrets_bootstrap_cmd:
+        description: 'Make target to bootstrap secrets (e.g. secrets-bootstrap). Empty = skip.'
+        required: false
+        type: string
+        default: ''
     
     secrets:
       AWS_ROLE_ARN:
@@ -134,22 +139,51 @@ jobs:
       TF_MODULES_SSH_KEY: ${{ secrets.TF_MODULES_SSH_KEY }}
 
   # ============================================================================
-  # JOB 3: ECS CodeDeploy Blue/Green
+  # JOB 3: Bootstrap Secrets (optional, idempotent)
+  # ============================================================================
+  bootstrap-secrets:
+    name: Bootstrap Secrets
+    needs: [release-ecr, deploy-infrastructure]
+    if: |
+      always() &&
+      inputs.secrets_bootstrap_cmd != '' &&
+      needs.release-ecr.result == 'success' &&
+      (needs.deploy-infrastructure.result == 'success' ||
+       needs.deploy-infrastructure.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: 🔑 Bootstrap Secrets
+        run: make ${{ inputs.secrets_bootstrap_cmd }}
+
+  # ============================================================================
+  # JOB 4: ECS CodeDeploy Blue/Green
   # ============================================================================
   deploy-ecs:
     name: Deploy to ECS
-    needs: [release-ecr, deploy-infrastructure]
+    needs: [release-ecr, deploy-infrastructure, bootstrap-secrets]
     # Complex conditional:
     # - Run even if previous jobs failed (always())
     # - But only if release succeeded
     # - And release created something
     # - And infrastructure either succeeded or was skipped
+    # - And bootstrap either succeeded or was skipped
     if: |
       always() && 
       needs.release-ecr.result == 'success' &&
       needs.release-ecr.outputs.has_release == 'true' &&
       (needs.deploy-infrastructure.result == 'success' || 
-       needs.deploy-infrastructure.result == 'skipped')
+       needs.deploy-infrastructure.result == 'skipped') &&
+      (needs.bootstrap-secrets.result == 'success' ||
+       needs.bootstrap-secrets.result == 'skipped')
     uses: ./.github/workflows/reusable-ecs-codedeploy.yml
     with:
       cluster_name: ${{ inputs.cluster_name }}
