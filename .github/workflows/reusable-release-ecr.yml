@@ -33,6 +33,12 @@ on:
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
         required: false
+      DOCKER_HUB_USERNAME:
+        description: 'Docker Hub username to avoid rate limits'
+        required: false
+      DOCKER_HUB_TOKEN:
+        description: 'Docker Hub access token'
+        required: false
     outputs:
       version:
         description: 'Released version tag (e.g., 0.1.1)'
@@ -61,7 +67,14 @@ jobs:
           echo "test-api-key" > secrets/api_key.txt
           echo "test-jwt-secret" > secrets/jwt_secret.txt
 
-      - name: 🐳 Build Docker images
+      - name: � Docker Hub Login (avoid rate limits)
+        if: ${{ secrets.DOCKER_HUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: �🐳 Build Docker images
         run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint

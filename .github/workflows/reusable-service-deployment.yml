@@ -104,6 +104,12 @@ on:
       TF_MODULES_SSH_KEY:
         description: 'SSH private key for cloning private Terraform modules'
         required: false
+      DOCKER_HUB_USERNAME:
+        description: 'Docker Hub username to avoid pull rate limits'
+        required: false
+      DOCKER_HUB_TOKEN:
+        description: 'Docker Hub access token'
+        required: false
 
 permissions:
   id-token: write    # Required for OIDC
@@ -126,6 +132,8 @@ jobs:
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+      DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
   # ============================================================================
   # JOB 2: Terraform Infrastructure (Optional)
