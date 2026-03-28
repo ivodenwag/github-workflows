@@ -43,6 +43,9 @@ on:
       version:
         description: 'Released version tag (e.g., 0.1.1)'
         value: ${{ jobs.deploy.outputs.version }}
+      has_release:
+        description: 'Whether a new release was created'
+        value: ${{ jobs.deploy.outputs.has_release }}
 
 permissions:
   id-token: write    # Required for OIDC
@@ -150,6 +153,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      has_release: ${{ needs.release.outputs.has_release }}
 
     steps:
       - name: 🏷️ Determine version
