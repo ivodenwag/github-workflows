@@ -68,8 +68,8 @@ jobs:
           echo "test-jwt-secret" > secrets/jwt_secret.txt
 
       - name: � Docker Hub Login (avoid rate limits)
-        if: ${{ secrets.DOCKER_HUB_USERNAME != '' }}
         uses: docker/login-action@v3
+        continue-on-error: true
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
