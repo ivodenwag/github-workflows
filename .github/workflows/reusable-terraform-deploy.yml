@@ -114,7 +114,23 @@ jobs:
         id: apply
         env:
           TF_VAR_image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || '' }}
+          AWS_MAX_ATTEMPTS: "5"
+          AWS_RETRY_MODE: "adaptive"
         run: terraform apply -input=false tfplan
+
+      - name: 🔄 Recovery - Push errored state
+        if: failure() && steps.apply.outcome == 'failure'
+        env:
+          AWS_MAX_ATTEMPTS: "5"
+          AWS_RETRY_MODE: "adaptive"
+        run: |
+          if [ -f "errored.tfstate" ]; then
+            echo "⚠️ Found errored.tfstate — attempting state push recovery..."
+            terraform state push errored.tfstate
+            echo "✅ State recovered successfully"
+          else
+            echo "ℹ️ No errored.tfstate found — state push was not the issue"
+          fi
 
       - name: 📤 Capture Terraform Outputs
         id: outputs
