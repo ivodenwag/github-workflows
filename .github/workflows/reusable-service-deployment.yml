@@ -93,6 +93,11 @@ on:
         required: false
         type: string
         default: ''
+      deployment_config:
+        description: 'CodeDeploy deployment config. Use ECSAllAtOnce for NLB, ECSLinear10PercentEvery1Minutes for ALB.'
+        required: false
+        type: string
+        default: 'CodeDeployDefault.ECSLinear10PercentEvery1Minutes'
     
     secrets:
       AWS_ROLE_ARN:
@@ -211,6 +216,7 @@ jobs:
       codedeploy_application: ${{ inputs.codedeploy_application }}
       codedeploy_deployment_group: ${{ inputs.codedeploy_deployment_group }}
       appspec_path: ${{ inputs.appspec_path }}
+      deployment_config: ${{ inputs.deployment_config }}
       aws_region: ${{ inputs.aws_region }}
     secrets:
       AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
