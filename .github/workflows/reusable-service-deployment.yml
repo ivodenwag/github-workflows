@@ -93,6 +93,11 @@ on:
         required: false
         type: string
         default: ''
+      seed_command:
+        description: 'Shell command to run as ECS one-off task for DB seeding (e.g. npx tsx prisma/seed.ts). Empty = skip.'
+        required: false
+        type: string
+        default: ''
       deployment_config:
         description: 'CodeDeploy deployment config. Use ECSAllAtOnce for NLB, ECSLinear10PercentEvery1Minutes for ALB.'
         required: false
@@ -185,11 +190,36 @@ jobs:
         run: make ${{ inputs.secrets_bootstrap_cmd }}
 
   # ============================================================================
-  # JOB 4: ECS CodeDeploy Blue/Green
+  # JOB 4: Seed Database (optional, idempotent ECS one-off task)
+  # ============================================================================
+  seed-database:
+    name: Seed Database
+    needs: [release-ecr, deploy-infrastructure, bootstrap-secrets]
+    if: |
+      always() &&
+      inputs.seed_command != '' &&
+      needs.release-ecr.result == 'success' &&
+      (needs.deploy-infrastructure.result == 'success' ||
+       needs.deploy-infrastructure.result == 'skipped') &&
+      (needs.bootstrap-secrets.result == 'success' ||
+       needs.bootstrap-secrets.result == 'skipped')
+    uses: ./.github/workflows/reusable-ecs-run-task.yml
+    with:
+      cluster_name: ${{ inputs.cluster_name }}
+      service_name: ${{ inputs.ecs_service_name }}
+      task_family: ${{ inputs.task_family }}
+      container_name: ${{ inputs.container_name }}
+      command: ${{ inputs.seed_command }}
+      aws_region: ${{ inputs.aws_region }}
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+  # ============================================================================
+  # JOB 5: ECS CodeDeploy Blue/Green
   # ============================================================================
   deploy-ecs:
     name: Deploy to ECS
-    needs: [release-ecr, deploy-infrastructure, bootstrap-secrets]
+    needs: [release-ecr, deploy-infrastructure, bootstrap-secrets, seed-database]
     # Complex conditional:
     # - Run even if previous jobs failed (always())
     # - But only if release succeeded
@@ -203,7 +233,9 @@ jobs:
       (needs.deploy-infrastructure.result == 'success' || 
        needs.deploy-infrastructure.result == 'skipped') &&
       (needs.bootstrap-secrets.result == 'success' ||
-       needs.bootstrap-secrets.result == 'skipped')
+       needs.bootstrap-secrets.result == 'skipped') &&
+      (needs.seed-database.result == 'success' ||
+       needs.seed-database.result == 'skipped')
     uses: ./.github/workflows/reusable-ecs-codedeploy.yml
     with:
       cluster_name: ${{ inputs.cluster_name }}

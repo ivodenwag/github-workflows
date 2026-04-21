@@ -1,0 +1,123 @@
+name: ECS One-Off Task
+
+on:
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: 'ECS cluster name'
+        required: true
+        type: string
+      service_name:
+        description: 'ECS service name (used to read network configuration)'
+        required: true
+        type: string
+      task_family:
+        description: 'ECS task definition family to use for the one-off task'
+        required: true
+        type: string
+      container_name:
+        description: 'Container name in task definition'
+        required: true
+        type: string
+      command:
+        description: 'Shell command to run inside the container (e.g. npx tsx prisma/seed.ts)'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'eu-central-1'
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+    outputs:
+      exit_code:
+        description: 'Exit code of the container'
+        value: ${{ jobs.run-task.outputs.exit_code }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  run-task:
+    name: Run ECS One-Off Task
+    runs-on: ubuntu-latest
+    outputs:
+      exit_code: ${{ steps.wait.outputs.exit_code }}
+    steps:
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: 🚀 Start one-off task
+        id: run
+        env:
+          CLUSTER: ${{ inputs.cluster_name }}
+          SERVICE: ${{ inputs.service_name }}
+          TASK_FAMILY: ${{ inputs.task_family }}
+          CONTAINER: ${{ inputs.container_name }}
+          REGION: ${{ inputs.aws_region }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          # Read network config (subnets + security groups) from the running ECS service
+          NETWORK=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "$REGION" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration' \
+            --output json)
+
+          SUBNETS=$(echo "$NETWORK" | jq -r '.subnets | join(",")')
+          SECURITY_GROUPS=$(echo "$NETWORK" | jq -r '.securityGroups | join(",")')
+
+          echo "Subnets:         $SUBNETS"
+          echo "Security Groups: $SECURITY_GROUPS"
+          echo "Command:         $COMMAND"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_FAMILY" \
+            --launch-type FARGATE \
+            --region "$REGION" \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=DISABLED}" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"$CONTAINER\",\"command\":[\"sh\",\"-c\",\"$COMMAND\"]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "task_arn=$TASK_ARN" >> "$GITHUB_OUTPUT"
+          echo "Task started: $TASK_ARN"
+
+      - name: ⏳ Wait for task to complete
+        id: wait
+        env:
+          CLUSTER: ${{ inputs.cluster_name }}
+          CONTAINER: ${{ inputs.container_name }}
+          REGION: ${{ inputs.aws_region }}
+          TASK_ARN: ${{ steps.run.outputs.task_arn }}
+        run: |
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --region "$REGION"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --region "$REGION" \
+            --query "tasks[0].containers[?name=='$CONTAINER'].exitCode" \
+            --output text)
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "Task exit code: $EXIT_CODE"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
+          echo "✅ Task completed successfully"
