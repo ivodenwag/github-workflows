@@ -45,6 +45,7 @@ jobs:
   run-task:
     name: Run ECS One-Off Task
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       exit_code: ${{ steps.wait.outputs.exit_code }}
     steps:
