@@ -28,11 +28,6 @@ on:
         required: false
         type: string
         default: ''
-      environment:
-        description: 'Deployment environment (e.g. production, staging)'
-        required: false
-        type: string
-        default: 'production'
     secrets:
       AWS_ROLE_ARN:
         description: 'AWS IAM Role ARN for OIDC authentication'
@@ -105,7 +100,6 @@ jobs:
         id: plan
         env:
           TF_VAR_image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || '' }}
-          TF_VAR_environment: ${{ inputs.environment }}
         run: terraform plan -out=tfplan -input=false
 
       - name: 📦 Upload Plan Artifact
@@ -120,7 +114,6 @@ jobs:
         id: apply
         env:
           TF_VAR_image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || '' }}
-          TF_VAR_environment: ${{ inputs.environment }}
           AWS_MAX_ATTEMPTS: "5"
           AWS_RETRY_MODE: "adaptive"
         run: terraform apply -input=false tfplan
