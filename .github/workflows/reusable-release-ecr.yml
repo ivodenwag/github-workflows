@@ -188,19 +188,19 @@ jobs:
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
           AWS_REGION: ${{ inputs.aws_region }}
         run: |
-          aws ecr describe-repositories \
+          if aws ecr describe-repositories \
             --repository-names "$ECR_REPOSITORY" \
             --region "$AWS_REGION" \
-            --query 'repositories[0].repositoryName' \
-            --output text 2>/dev/null \
-          || aws ecr create-repository \
-            --repository-name "$ECR_REPOSITORY" \
-            --region "$AWS_REGION" \
-            --image-scanning-configuration scanOnPush=true \
-            --image-tag-mutability MUTABLE \
-            --output none \
-          && echo "✅ ECR repository created: $ECR_REPOSITORY" \
-          || echo "✅ ECR repository already exists: $ECR_REPOSITORY"
+            --output text 2>/dev/null; then
+            echo "✅ ECR repository already exists: $ECR_REPOSITORY"
+          else
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --region "$AWS_REGION" \
+              --image-scanning-configuration scanOnPush=true \
+              --image-tag-mutability MUTABLE
+            echo "✅ ECR repository created: $ECR_REPOSITORY"
+          fi
 
       - name: 🏗️ Build Docker image
         env:
