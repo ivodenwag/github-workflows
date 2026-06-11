@@ -52,13 +52,17 @@ jobs:
       - name: 📋 Copy static assets (Unix)
         if: runner.os != 'Windows'
         working-directory: desktop
-        run: cp -r .next/static .next/standalone/.next/static
+        run: |
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/static
 
       - name: 📋 Copy static assets (Windows)
         if: runner.os == 'Windows'
         working-directory: desktop
         shell: pwsh
-        run: Copy-Item -Recurse -Force .next/static .next/standalone/.next/static
+        run: |
+          New-Item -ItemType Directory -Force -Path .next/standalone/.next | Out-Null
+          Copy-Item -Recurse -Force .next/static .next/standalone/.next/static
 
       - name: 📦 Package binary with caxa
         working-directory: desktop
