@@ -47,22 +47,18 @@ jobs:
 
       - name: ⚙️ Compile CLI entrypoint
         working-directory: desktop
-        run: npx tsc bin/cli.ts --module commonjs --target ES2017 --esModuleInterop --skipLibCheck --outDir .next/standalone
+        run: npx tsc bin/cli.ts --module commonjs --target ES2017 --esModuleInterop --skipLibCheck --outDir .next/standalone/desktop
 
       - name: 📋 Copy static assets (Unix)
         if: runner.os != 'Windows'
         working-directory: desktop
-        run: |
-          mkdir -p .next/standalone/desktop/.next
-          cp -r .next/static .next/standalone/desktop/.next/static
+        run: cp -r .next/static .next/standalone/desktop/.next/static
 
       - name: 📋 Copy static assets (Windows)
         if: runner.os == 'Windows'
         working-directory: desktop
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path .next/standalone/desktop/.next | Out-Null
-          Copy-Item -Recurse -Force .next/static .next/standalone/desktop/.next/static
+        run: Copy-Item -Recurse -Force .next/static .next/standalone/desktop/.next/static
 
       - name: � Debug standalone structure
         if: runner.os != 'Windows'
@@ -75,7 +71,7 @@ jobs:
         run: |
           mkdir -p dist
           npx caxa \
-            --input .next/standalone \
+            --input .next/standalone/desktop \
             --output dist/${{ matrix.binary }} \
             -- '{{caxa}}/node_modules/.bin/node' '{{caxa}}/bin/cli.js'
 
