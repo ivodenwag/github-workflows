@@ -17,8 +17,6 @@ jobs:
         include:
           - os: macos-14
             binary: webstudio42-macos-arm64
-          - os: macos-13
-            binary: webstudio42-macos-x64
           - os: ubuntu-latest
             binary: webstudio42-linux-x64
           - os: windows-latest
