@@ -72,7 +72,7 @@ jobs:
           npx caxa \
             --input .next/standalone \
             --output dist/${{ matrix.binary }} \
-            -- '{{caxa}}/node_modules/.bin/node' '{{caxa}}/cli.js'
+            -- '{{caxa}}/node_modules/.bin/node' '{{caxa}}/bin/cli.js'
 
       - name: ⬆️ Upload artifact
         uses: actions/upload-artifact@v4
