@@ -53,16 +53,16 @@ jobs:
         if: runner.os != 'Windows'
         working-directory: desktop
         run: |
-          mkdir -p .next/standalone/.next
-          cp -r .next/static .next/standalone/.next/static
+          mkdir -p .next/standalone/desktop/.next
+          cp -r .next/static .next/standalone/desktop/.next/static
 
       - name: 📋 Copy static assets (Windows)
         if: runner.os == 'Windows'
         working-directory: desktop
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path .next/standalone/.next | Out-Null
-          Copy-Item -Recurse -Force .next/static .next/standalone/.next/static
+          New-Item -ItemType Directory -Force -Path .next/standalone/desktop/.next | Out-Null
+          Copy-Item -Recurse -Force .next/static .next/standalone/desktop/.next/static
 
       - name: � Debug standalone structure
         if: runner.os != 'Windows'
