@@ -64,7 +64,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path .next/standalone/.next | Out-Null
           Copy-Item -Recurse -Force .next/static .next/standalone/.next/static
 
-      - name: 📦 Package binary with caxa
+      - name: � Debug standalone structure
+        if: runner.os != 'Windows'
+        working-directory: desktop
+        run: ls -la .next/standalone/
+
+      - name: �📦 Package binary with caxa
         working-directory: desktop
         shell: bash
         run: |
