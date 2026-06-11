@@ -1,0 +1,99 @@
+name: Desktop Binary Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release tag to upload binaries to (e.g. v0.1.1)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ matrix.binary }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-14
+            binary: webstudio42-macos-arm64
+          - os: macos-13
+            binary: webstudio42-macos-x64
+          - os: ubuntu-latest
+            binary: webstudio42-linux-x64
+          - os: windows-latest
+            binary: webstudio42-windows-x64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 📝 Generate changelog.ts
+        run: node desktop/scripts/generate-changelog.mjs
+
+      - name: 🏗️ Build Next.js standalone
+        working-directory: desktop
+        run: npx next build
+
+      - name: ⚙️ Compile CLI entrypoint
+        working-directory: desktop
+        run: npx tsc bin/cli.ts --module commonjs --target ES2017 --esModuleInterop --skipLibCheck --outDir .next/standalone
+
+      - name: 📋 Copy static assets (Unix)
+        if: runner.os != 'Windows'
+        working-directory: desktop
+        run: cp -r .next/static .next/standalone/.next/static
+
+      - name: 📋 Copy static assets (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        shell: pwsh
+        run: Copy-Item -Recurse -Force .next/static .next/standalone/.next/static
+
+      - name: 📦 Package binary with caxa
+        working-directory: desktop
+        shell: bash
+        run: |
+          mkdir -p dist
+          npx caxa \
+            --input .next/standalone \
+            --output dist/${{ matrix.binary }} \
+            -- '{{caxa}}/node_modules/.bin/node' '{{caxa}}/cli.js'
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: desktop/dist/${{ matrix.binary }}
+          if-no-files-found: error
+
+  publish:
+    name: Upload to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: ⬇️ Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: 🚀 Upload binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          files: dist/*
+          fail_on_unmatched_files: true
