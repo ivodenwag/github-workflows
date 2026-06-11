@@ -58,12 +58,7 @@ jobs:
         shell: pwsh
         run: Copy-Item -Recurse -Force .next/static .next/standalone/desktop/.next/static
 
-      - name: � Debug standalone structure
-        if: runner.os != 'Windows'
-        working-directory: desktop
-        run: ls -la .next/standalone/
-
-      - name: �📦 Package binary with caxa
+      - name: 📦 Package binary with caxa
         working-directory: desktop
         shell: bash
         run: |
@@ -79,6 +74,7 @@ jobs:
           name: ${{ matrix.binary }}
           path: desktop/dist/${{ matrix.binary }}
           if-no-files-found: error
+          retention-days: 7
 
   publish:
     name: Upload to GitHub Release
