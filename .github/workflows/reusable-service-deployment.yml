@@ -120,6 +120,9 @@ on:
       DOCKER_HUB_TOKEN:
         description: 'Docker Hub access token'
         required: false
+      GH_TOKEN:
+        description: 'GitHub token for downloading assets from private repos'
+        required: false
 
 permissions:
   id-token: write    # Required for OIDC
@@ -144,6 +147,7 @@ jobs:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
       DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
   # ============================================================================
   # JOB 2: Terraform Infrastructure (Optional)

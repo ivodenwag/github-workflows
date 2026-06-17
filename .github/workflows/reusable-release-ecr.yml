@@ -39,6 +39,9 @@ on:
       DOCKER_HUB_TOKEN:
         description: 'Docker Hub access token'
         required: false
+      GH_TOKEN:
+        description: 'GitHub token for downloading assets from private repos (e.g. render schema)'
+        required: false
     outputs:
       version:
         description: 'Released version tag (e.g., 0.1.1)'
@@ -209,6 +212,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
           VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           # Build image with docker-compose (uses explicit image name from compose file)
           VERSION=$VERSION docker compose -f docker-compose.yml build ${{ inputs.service_name }}
