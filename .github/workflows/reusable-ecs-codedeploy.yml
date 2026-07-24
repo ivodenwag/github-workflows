@@ -98,10 +98,9 @@ jobs:
             --application-name ${{ inputs.codedeploy_application }} \
             --deployment-group-name ${{ inputs.codedeploy_deployment_group }} \
             --include-only-statuses InProgress \
-            --query 'deployments[0]' \
-            --output text)
+            --output json | jq -r '.deployments[0] // empty')
           
-          if [ "$ACTIVE" != "None" ] && [ -n "$ACTIVE" ]; then
+          if [ -n "$ACTIVE" ]; then
             echo "❌ Deployment already in progress: $ACTIVE"
             echo "Please wait for current deployment to complete or cancel it manually."
             exit 1
