@@ -182,24 +182,16 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.version || github.sha }}
 
-      - name: � Debug OIDC token claims
+      - name: Debug OIDC token claims
         run: |
           RESP=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
-          PAYLOAD=$(echo "$RESP" | python3 -c "
-import sys, json, base64
-d = json.load(sys.stdin)
-if 'value' not in d:
-    print('ERROR getting token:', json.dumps(d))
-    exit(1)
-parts = d['value'].split('.')
-payload = parts[1] + '=' * (4 - len(parts[1]) % 4)
-print(json.dumps(json.loads(base64.b64decode(payload)), indent=2))
-          ")
-          echo "$PAYLOAD"
-          echo "sub=$(echo "$PAYLOAD" | python3 -c \"import sys,json; print(json.load(sys.stdin).get('sub','NOT FOUND'))\")"
+          JWT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))")
+          PAYLOAD=$(echo "$JWT" | cut -d. -f2 | python3 -c "import sys,base64; p=sys.stdin.read().strip(); print(base64.b64decode(p+'=='[:len(p)%4 or 4]).decode())" 2>/dev/null || echo "{}")
+          echo "sub: $(echo "$PAYLOAD" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('sub','NOT FOUND'))")"
+          echo "repository: $(echo "$PAYLOAD" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('repository','NOT FOUND'))")"
 
-      - name: �🔐 Configure AWS credentials (OIDC)
+      - name: 🔐 Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
