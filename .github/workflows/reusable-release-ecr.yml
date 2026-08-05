@@ -156,6 +156,10 @@ jobs:
     needs: [test, release]
     if: always() && needs.test.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
     outputs:
       version: ${{ steps.version.outputs.version }}
       has_release: ${{ needs.release.outputs.has_release }}
