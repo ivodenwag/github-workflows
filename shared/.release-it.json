@@ -25,6 +25,7 @@
     "@release-it/conventional-changelog": {
       "preset": {
         "name": "conventionalcommits",
+        "tagPrefix": "",
         "types": [
           {
             "type": "feat",
