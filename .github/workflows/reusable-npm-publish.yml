@@ -136,7 +136,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          FLAGS="--ci --no-npm"
+          # --npm.publish=false, NOT --no-npm. The latter disables release-it's npm plugin
+          # entirely, and that plugin owns the version bump in package.json as well as
+          # publishing. With --no-npm the tag says one version while package.json still says the
+          # old one — and `npm publish` reads package.json, so the wrong version goes out. Not
+          # visible in a dry run, because a dry run writes nothing either way.
+          # reusable-release-ecr.yml uses --no-npm safely: it tags a Docker image from
+          # `git describe` and never reads package.json.
+          FLAGS="--ci --npm.publish=false"
           [ -n "${{ inputs.pre_release }}" ] && FLAGS="$FLAGS --preRelease=${{ inputs.pre_release }}"
 
           if [ "${{ inputs.dry_run }}" = "true" ]; then
@@ -201,6 +208,23 @@ jobs:
             exit 1
           fi
           echo "✅ ${{ inputs.dist_entry }} present ($(wc -c < "${{ inputs.dist_entry }}") bytes)"
+
+      # `npm publish` takes its version from package.json, while the tag comes from release-it.
+      # If those two ever disagree, the wrong version goes out — and GitHub Packages does not let
+      # you take it back. This is not hypothetical: it happened once, with --no-npm silently
+      # skipping the manifest bump. A dry run cannot catch it, because a dry run writes nothing.
+      - name: ✅ Verify package.json matches the released tag
+        if: needs.release.outputs.has_release == 'true'
+        run: |
+          MANIFEST=$(node -p "require('./package.json').version")
+          TAG="${{ needs.release.outputs.version }}"
+
+          if [ "$MANIFEST" != "$TAG" ]; then
+            echo "❌ package.json says $MANIFEST but the release tag is $TAG."
+            echo "   Publishing now would put $MANIFEST into the registry, permanently."
+            exit 1
+          fi
+          echo "✅ package.json and tag agree on $TAG"
 
       - name: 📦 Setup Node.js for GitHub Packages
         uses: actions/setup-node@v4
