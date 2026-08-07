@@ -138,18 +138,27 @@ jobs:
 
           FLAGS="--ci --no-npm"
           [ -n "${{ inputs.pre_release }}" ] && FLAGS="$FLAGS --preRelease=${{ inputs.pre_release }}"
-          [ "${{ inputs.dry_run }}" = "true" ] && FLAGS="$FLAGS --dry-run"
-
-          echo "release-it $FLAGS"
-          npx release-it $FLAGS
 
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            # Nothing was tagged, so read the version release-it would have produced.
-            VERSION=$(node -p "require('./package.json').version")
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "has_release=false" >> $GITHUB_OUTPUT
-            echo "🧪 Dry run — would have released ${VERSION}"
+            # Ask release-it for the number rather than reading package.json: release-it computes
+            # from the latest git TAG, not from the manifest, and a dry run does not bump the
+            # manifest at all. Reading it would report the current version — which happens to be
+            # right only until the first real release, and silently wrong afterwards.
+            VERSION=$(npx release-it $FLAGS --release-version)
+
+            npx release-it $FLAGS --dry-run
+
+            if [ -z "$VERSION" ]; then
+              echo "version=" >> $GITHUB_OUTPUT
+              echo "has_release=false" >> $GITHUB_OUTPUT
+              echo "🧪 Dry run — the commits since the last tag warrant no version bump"
+            else
+              echo "version=${VERSION}" >> $GITHUB_OUTPUT
+              echo "has_release=false" >> $GITHUB_OUTPUT
+              echo "🧪 Dry run — would have released ${VERSION}"
+            fi
           else
+            npx release-it $FLAGS
             VERSION=$(git describe --tags --abbrev=0)
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
             echo "has_release=true" >> $GITHUB_OUTPUT
