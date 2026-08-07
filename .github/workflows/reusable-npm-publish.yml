@@ -1,0 +1,258 @@
+name: Release & Publish to GitHub Packages
+
+# Publishes an npm package to GitHub Packages.
+#
+# The counterpart to reusable-release-ecr.yml for repositories whose artifact is a package rather
+# than a Docker image. Same shape — test, then version with release-it, then ship in a separate
+# job — and the same shared shared/.release-it.json, so versioning behaves identically across
+# every tec42 repository.
+#
+# GitHub Packages does not allow republishing a version. A failed publish burns that number
+# permanently, so the publish job verifies the build output before it uploads, and `dry_run`
+# exists to exercise the whole pipeline without consuming anything.
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: 'Docker compose service name'
+        required: true
+        type: string
+      compose_files:
+        description: 'Compose files for the test job (space separated)'
+        required: false
+        type: string
+        default: 'docker-compose.yml docker-compose.ci.yml'
+      build_compose_files:
+        description: >-
+          Compose files for the publish job. MUST bind-mount the working directory, or the build
+          output stays inside the discarded container and an empty package is published.
+        required: false
+        type: string
+        default: 'docker-compose.yml docker-compose.override.yml'
+      dist_entry:
+        description: 'File that must exist after the build, as a guard against publishing an empty package'
+        required: false
+        type: string
+        default: 'dist/src/index.js'
+      node_version:
+        description: 'Node.js version for release-it and npm publish'
+        required: false
+        type: string
+        default: '22'
+      pre_release:
+        description: 'Prerelease identifier, e.g. "rc". Empty for a normal release.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Run everything without creating a release or publishing'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      DOCKER_HUB_USERNAME:
+        description: 'Docker Hub username to avoid rate limits'
+        required: false
+      DOCKER_HUB_TOKEN:
+        description: 'Docker Hub access token'
+        required: false
+    outputs:
+      version:
+        description: 'Published version tag'
+        value: ${{ jobs.release.outputs.version }}
+      has_release:
+        description: 'Whether a new version was created'
+        value: ${{ jobs.release.outputs.has_release }}
+
+permissions:
+  contents: write # release-it creates the tag and the GitHub Release
+  packages: write # npm publish to GitHub Packages
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐳 Docker Hub Login (avoid rate limits)
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: 🐳 Build Docker images
+        run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
+
+      - name: 🎨 Lint
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make lint
+
+      - name: 🔍 Type check
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make type-check
+
+      - name: 🏗️ Build
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
+
+      - name: 🧪 Test
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
+
+  release:
+    name: Create Release
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      has_release: ${{ steps.release.outputs.has_release }}
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release-it analyses the full commit history
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: 📥 Download shared release config
+        run: |
+          curl -sL -H 'Cache-Control: no-cache' -o .release-it.json \
+            "https://raw.githubusercontent.com/tec42/github-workflows/main/shared/.release-it.json?$(date +%s)"
+          echo "✅ Downloaded shared release-it config"
+
+      - name: 📦 Install release-it and plugins
+        run: npm install --no-save release-it @release-it/conventional-changelog
+
+      - name: 🏷️ Run release-it
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # --npm.publish=false, NOT --no-npm. The latter disables release-it's npm plugin
+          # entirely, and that plugin owns the version bump in package.json as well as
+          # publishing. With --no-npm the tag says one version while package.json still says the
+          # old one — and `npm publish` reads package.json, so the wrong version goes out. Not
+          # visible in a dry run, because a dry run writes nothing either way.
+          # reusable-release-ecr.yml uses --no-npm safely: it tags a Docker image from
+          # `git describe` and never reads package.json.
+          FLAGS="--ci --npm.publish=false"
+          [ -n "${{ inputs.pre_release }}" ] && FLAGS="$FLAGS --preRelease=${{ inputs.pre_release }}"
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            # Ask release-it for the number rather than reading package.json: release-it computes
+            # from the latest git TAG, not from the manifest, and a dry run does not bump the
+            # manifest at all. Reading it would report the current version — which happens to be
+            # right only until the first real release, and silently wrong afterwards.
+            VERSION=$(npx release-it $FLAGS --release-version)
+
+            npx release-it $FLAGS --dry-run
+
+            if [ -z "$VERSION" ]; then
+              echo "version=" >> $GITHUB_OUTPUT
+              echo "has_release=false" >> $GITHUB_OUTPUT
+              echo "🧪 Dry run — the commits since the last tag warrant no version bump"
+            else
+              echo "version=${VERSION}" >> $GITHUB_OUTPUT
+              echo "has_release=false" >> $GITHUB_OUTPUT
+              echo "🧪 Dry run — would have released ${VERSION}"
+            fi
+          else
+            npx release-it $FLAGS
+            VERSION=$(git describe --tags --abbrev=0)
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "has_release=true" >> $GITHUB_OUTPUT
+            echo "📦 Released version: ${VERSION}"
+          fi
+
+  publish:
+    name: Publish to GitHub Packages
+    needs: [test, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout released tag
+        uses: actions/checkout@v4
+        with:
+          # The tag carries the bumped package.json; the branch head does not.
+          ref: ${{ needs.release.outputs.has_release == 'true' && needs.release.outputs.version || github.sha }}
+
+      - name: 🐳 Docker Hub Login (avoid rate limits)
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      # Deliberately NOT the CI compose files. Those set `volumes: []`, so the build output would
+      # stay inside the container and be discarded — npm publish would then upload a package with
+      # no code in it, and the version number would be spent for good.
+      - name: 🏗️ Build with the working directory mounted
+        run: |
+          docker compose $(echo "${{ inputs.build_compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
+          COMPOSE_FILES="${{ inputs.build_compose_files }}" make build
+
+      - name: ✅ Verify the build output reached the runner
+        run: |
+          if [ ! -s "${{ inputs.dist_entry }}" ]; then
+            echo "❌ ${{ inputs.dist_entry }} is missing or empty."
+            echo "   The build ran inside the container without a bind mount."
+            echo "   Check build_compose_files — it must include an override that mounts the workspace."
+            exit 1
+          fi
+          echo "✅ ${{ inputs.dist_entry }} present ($(wc -c < "${{ inputs.dist_entry }}") bytes)"
+
+      # `npm publish` takes its version from package.json, while the tag comes from release-it.
+      # If those two ever disagree, the wrong version goes out — and GitHub Packages does not let
+      # you take it back. This is not hypothetical: it happened once, with --no-npm silently
+      # skipping the manifest bump. A dry run cannot catch it, because a dry run writes nothing.
+      - name: ✅ Verify package.json matches the released tag
+        if: needs.release.outputs.has_release == 'true'
+        run: |
+          MANIFEST=$(node -p "require('./package.json').version")
+          TAG="${{ needs.release.outputs.version }}"
+
+          if [ "$MANIFEST" != "$TAG" ]; then
+            echo "❌ package.json says $MANIFEST but the release tag is $TAG."
+            echo "   Publishing now would put $MANIFEST into the registry, permanently."
+            exit 1
+          fi
+          echo "✅ package.json and tag agree on $TAG"
+
+      - name: 📦 Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: 🚀 Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FLAGS=""
+          [ -n "${{ inputs.pre_release }}" ] && FLAGS="--tag ${{ inputs.pre_release }}"
+          [ "${{ inputs.dry_run }}" = "true" ] && FLAGS="$FLAGS --dry-run"
+
+          npm publish $FLAGS
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          {
+            echo "### npm publish 📦"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | ${{ needs.release.outputs.version }} |"
+            echo "| Registry | https://npm.pkg.github.com |"
+            echo "| Dry run | ${{ inputs.dry_run }} |"
+            echo "| Prerelease | ${{ inputs.pre_release || '—' }} |"
+            echo "| Status | ${{ job.status }} |"
+          } >> $GITHUB_STEP_SUMMARY
