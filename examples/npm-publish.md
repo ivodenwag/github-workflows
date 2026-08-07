@@ -59,6 +59,11 @@ on:
         type: boolean
         default: false
 
+# Do not omit this block. See the warning below.
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   release:
     uses: tec42/github-workflows/.github/workflows/reusable-npm-publish.yml@main
@@ -69,6 +74,17 @@ jobs:
       DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
       DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 ```
+
+> ⚠️ **The `permissions` block belongs on the caller**, even though the reusable workflow declares
+> the same one. A called workflow can never hold more than the caller grants it, and tec42
+> repositories default to a read-only workflow token
+> (Settings → Actions → Workflow permissions). Without it the run ends in `startup_failure`
+> **before any job starts** — there is no log to read and no failed step to point at, which makes
+> it a genuinely confusing few minutes. `identity` and `render` declare permissions on the caller
+> for the same reason.
+>
+> The alternative — switching the repository default to read-write — works too, but grants every
+> workflow in the repository more than it needs.
 
 Trigger on `workflow_dispatch` while a package is young: publishing stays a deliberate act and a
 version cannot be spent by accident. Switch to `push: branches: [main]` once the API is settled.
