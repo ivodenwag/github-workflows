@@ -5,6 +5,7 @@
     "tagName": "${version}",
     "tagAnnotation": "Release ${version}",
     "tagPrefix": "",
+    "tagMatch": "[0-9]*.[0-9]*.[0-9]*",
     "requireBranch": "main",
     "requireCleanWorkingDir": true
   },
