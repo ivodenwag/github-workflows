@@ -23,7 +23,7 @@ on:
       NODE_AUTH_TOKEN:
         description: >-
           Token for installing @tec42-scoped packages from GitHub Packages. Pass
-          `${{ secrets.GITHUB_TOKEN }}` and give the calling workflow `packages: read`.
+          secrets.GITHUB_TOKEN and give the calling workflow `packages: read`.
           Only needed by services that depend on a private tec42 package.
         required: false
 
