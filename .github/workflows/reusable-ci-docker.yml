@@ -20,6 +20,12 @@ on:
       DOCKER_HUB_TOKEN:
         description: 'Docker Hub access token'
         required: false
+      NODE_AUTH_TOKEN:
+        description: >-
+          Token for installing @tec42-scoped packages from GitHub Packages. Pass
+          `${{ secrets.GITHUB_TOKEN }}` and give the calling workflow `packages: read`.
+          Only needed by services that depend on a private tec42 package.
+        required: false
 
 jobs:
   test:
@@ -45,6 +51,15 @@ jobs:
           echo "test-jwt-secret" > secrets/jwt_secret.txt
 
       - name: 🐳 Build Docker images
+        env:
+          # Read by the service's compose file as a build argument. A BuildKit secret would keep
+          # it out of the intermediate images too, but that needs the buildx plugin, and this
+          # toolchain runs entirely in Docker with no local plugin installs. Verified: the token
+          # appears in the history of the dev and builder stages, and NOT in the production image
+          # that gets pushed — multi-stage keeps the final history to the last stage only.
+          # Empty when the caller passes nothing, which is correct for services with no private
+          # dependencies.
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint
