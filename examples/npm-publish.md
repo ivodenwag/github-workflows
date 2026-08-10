@@ -5,6 +5,36 @@ The Docker-image counterpart is [deploy-ecr-with-release.md](deploy-ecr-with-rel
 
 ## Prerequisites
 
+### 0. Package access for consuming repositories
+
+This one bites the *consumer*, not the publisher, and it is worth knowing before you publish
+anything private.
+
+A private package is linked to the repository that published it, and GitHub Packages grants read
+access **per package and repository** — separately from repository permissions. Another service's
+`GITHUB_TOKEN` may carry `packages: read` and still be refused: that permission lets it read
+packages it is entitled to, and entitlement is granted on the package.
+
+An org owner adds each consumer once:
+
+**github.com/orgs/{org}/packages/npm/package/{name}** → *Package settings* →
+**Manage Actions access** → *Add repository* → role **Read**
+
+It is on the **package page**, not in the publishing repository's settings — there is no entry for
+it under Settings → Access.
+
+The symptom is a **403, not a 401**:
+
+```
+npm error 403 Forbidden - GET https://npm.pkg.github.com/download/@scope/name/1.0.0/…
+npm error 403 Permission permission_denied: read_package
+```
+
+A 401 means the token never arrived; a 403 means it arrived and is valid. It only appears in CI —
+a personal access token has org-wide reach, so local installs work right up to the first pipeline
+run. Setting the package to **internal** visibility instead makes every repository in the org a
+permitted reader, at the cost of the per-consumer decision.
+
 ### 1. Secrets
 
 - `GITHUB_TOKEN` — provided automatically; no setup needed
