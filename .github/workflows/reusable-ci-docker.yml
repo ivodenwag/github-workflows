@@ -13,6 +13,14 @@ on:
         required: false
         type: string
         default: 'skeleton-service'
+      test_target:
+        description: >-
+          Make target for the test step. Defaults to `test`. Pass `test-coverage` once a service
+          actually meets its coverage threshold — until then the target fails on every run and the
+          gate would block merges for a debt nobody incurred in that PR.
+        required: false
+        type: string
+        default: 'test'
     secrets:
       DOCKER_HUB_USERNAME:
         description: 'Docker Hub username to avoid rate limits'
@@ -72,4 +80,4 @@ jobs:
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make build
 
       - name: 🧪 Test
-        run: COMPOSE_FILES="${{ inputs.compose_files }}" make test
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make ${{ inputs.test_target }}
