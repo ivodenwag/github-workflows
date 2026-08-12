@@ -21,6 +21,23 @@ on:
         required: false
         type: string
         default: 'test'
+      integration_test_target:
+        description: >-
+          Make target for an additional integration test step. Empty by default, and the step is
+          skipped when it is empty — services without an integration suite are unaffected.
+
+          Kept separate from `test_target` rather than folded into it for two reasons. A coverage
+          threshold is calibrated against the unit suite, and measuring integration runs too would
+          move a number nobody changed. And `test_target` has to stay runnable without
+          infrastructure, which this one does not.
+
+          The caller's compose files must bring up whatever the suite needs — a database, a cache,
+          anything the application connects to at boot. This workflow starts nothing on its own;
+          the target it invokes is responsible for schema migration as well, so that no knowledge
+          of the service's ORM lives here.
+        required: false
+        type: string
+        default: ''
     secrets:
       DOCKER_HUB_USERNAME:
         description: 'Docker Hub username to avoid rate limits'
@@ -81,3 +98,10 @@ jobs:
 
       - name: 🧪 Test
         run: COMPOSE_FILES="${{ inputs.compose_files }}" make ${{ inputs.test_target }}
+
+      # Skipped entirely when the caller passes nothing, which is every service that has no
+      # integration suite. Runs after the unit step so a failure here is unambiguous: the fast
+      # checks already passed, so what broke needs the real infrastructure to reproduce.
+      - name: 🔗 Integration test
+        if: inputs.integration_test_target != ''
+        run: COMPOSE_FILES="${{ inputs.compose_files }}" make ${{ inputs.integration_test_target }}
