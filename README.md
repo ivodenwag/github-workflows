@@ -92,15 +92,29 @@ jobs:
 
 Runs tests in Docker Compose environment.
 
+Runs lint, type check, build and tests in a Docker Compose environment.
+
 **Inputs:**
 - `compose_files` - Docker compose files (default: `docker-compose.yml docker-compose.ci.yml`)
 - `service_name` - Docker compose service name (required)
+- `test_target` - Make target for the test step (default: `test`). Use `test-coverage` once the
+  service meets its coverage threshold
+- `integration_test_target` - Make target for an additional integration step (default: empty →
+  step skipped). The caller's compose files have to provide the infrastructure the suite needs,
+  and the target itself is responsible for any schema migration
+
+**Secrets:**
+- `DOCKER_HUB_USERNAME` / `DOCKER_HUB_TOKEN` - optional, avoids Docker Hub rate limits
+- `NODE_AUTH_TOKEN` - optional, required to install `@tec42`-scoped packages. Pass
+  `secrets.GITHUB_TOKEN` and give the calling workflow `permissions: packages: read`
 
 **Usage:**
 ```yaml
 uses: ivodenwag/github-workflows/.github/workflows/reusable-ci-docker.yml@v2.0.0
 with:
   service_name: identity
+  test_target: test-coverage
+  integration_test_target: test-integration-ci
 ```
 
 ---
