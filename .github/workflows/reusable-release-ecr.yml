@@ -33,6 +33,12 @@ on:
       NPM_TOKEN:
         description: 'NPM token for release-it (if needed)'
         required: false
+      NODE_AUTH_TOKEN:
+        description: >
+          Token for installing private @tec42 packages from GitHub Packages during the Docker
+          build. Pass secrets.GITHUB_TOKEN and give the calling workflow `packages: read`.
+          Without it the build fails with a 401 while everything else looks fine.
+        required: false
       DOCKER_HUB_USERNAME:
         description: 'Docker Hub username to avoid rate limits'
         required: false
@@ -81,6 +87,11 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: 🐳 Build Docker images
+        env:
+          # Read by the service's compose file as a build argument, same as in
+          # reusable-ci-docker.yml. Empty when the caller passes nothing, which is correct for
+          # services with no private dependencies.
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: docker compose $(echo "${{ inputs.compose_files }}" | sed 's/ / -f /g' | sed 's/^/-f /') build ${{ inputs.service_name }}
 
       - name: 🎨 Lint
@@ -226,6 +237,9 @@ jobs:
           ECR_REPOSITORY: ${{ inputs.ecr_repository }}
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          # The released image is built here. Without the token this step fails with a 401 for
+          # any service that depends on a private @tec42 package.
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
           # Build image with docker-compose (uses explicit image name from compose file)
           VERSION=$VERSION docker compose -f docker-compose.yml build ${{ inputs.service_name }}
