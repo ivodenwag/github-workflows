@@ -110,6 +110,73 @@ jobs:
           path: ${{ inputs.terraform_dir }}/tfplan
           retention-days: 30
 
+      # Post-mortem 2026-08-13 action P5. Refuses to apply a plan that would replace an ECS service
+      # whose configured target group has no load balancer attached.
+      #
+      # ECS cannot create a service against an unattached target group. If the plan destroys the
+      # service first, the apply fails after the destroy has already happened and no service is left
+      # — a `git revert` produces the same plan and fails identically. That is what took
+      # vehicle-manager down for eight hours.
+      #
+      # Every NLB service now holds its blue group with a keepalive listener (TD-009), so this check
+      # should never fire. It exists for the case that guarantee is missing: a newly bootstrapped
+      # service whose keepalive listener was skipped, or one where it was deleted or handed to
+      # CodeDeploy.
+      - name: 🛡️ Pre-flight - refuse to strand an ECS service
+        run: |
+          set -euo pipefail
+          terraform show -json tfplan > tfplan.json
+
+          # Resources being replaced or destroyed-then-created, with the target group they name.
+          jq -r '
+            [ .resource_changes[]?
+              | select(.type == "aws_ecs_service")
+              | select(.change.actions == ["delete","create"] or .change.actions == ["create","delete"])
+              | { addr: .address,
+                  tg: ( .change.after.load_balancer[0].target_group_arn
+                        // .change.before.load_balancer[0].target_group_arn ) }
+            ] | .[] | "\(.addr)\t\(.tg // "")"
+          ' tfplan.json > replacements.txt || true
+
+          if [ ! -s replacements.txt ]; then
+            echo "✅ No ECS service replacement in this plan."
+            exit 0
+          fi
+
+          echo "⚠️  This plan replaces an ECS service. Verifying its target group is attached."
+          FAILED=0
+          while IFS=$'\t' read -r ADDR TG; do
+            if [ -z "$TG" ] || [ "$TG" = "null" ]; then
+              echo "❓ $ADDR — target group ARN is not known at plan time, cannot verify."
+              echo "   Check by hand before continuing:"
+              echo "   aws elbv2 describe-target-groups --target-group-arns <arn> --query 'TargetGroups[0].LoadBalancerArns'"
+              FAILED=1
+              continue
+            fi
+            LBS=$(aws elbv2 describe-target-groups --target-group-arns "$TG" \
+                    --query 'length(TargetGroups[0].LoadBalancerArns)' --output text 2>/dev/null || echo "ERR")
+            if [ "$LBS" = "ERR" ]; then
+              echo "❓ $ADDR — could not read $TG. Treating as unsafe."
+              FAILED=1
+            elif [ "$LBS" = "0" ]; then
+              echo "❌ $ADDR would be destroyed and could NOT be recreated."
+              echo "   Its target group has no load balancer attached:"
+              echo "   $TG"
+              echo "   Applying this plan would leave no service. See Platform TD-009."
+              echo "   Fix: give the service a keepalive listener pointing at that group, then re-run."
+              FAILED=1
+            else
+              echo "✅ $ADDR — target group attached to $LBS load balancer(s)."
+            fi
+          done < replacements.txt
+
+          if [ "$FAILED" != "0" ]; then
+            echo ""
+            echo "Refusing to apply. This is post-mortem action P5; it exists because the"
+            echo "alternative was an eight-hour outage on 2026-08-13."
+            exit 1
+          fi
+
       - name: 🚀 Terraform Apply
         id: apply
         env:
