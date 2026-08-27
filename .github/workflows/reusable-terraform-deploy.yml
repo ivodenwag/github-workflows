@@ -185,6 +185,24 @@ jobs:
           AWS_RETRY_MODE: "adaptive"
         run: terraform apply -input=false tfplan
 
+      # INVEST-005-EPIC-006-FEATURE-002-US-004: per-product media IAM isolation.
+      #
+      # Feature-detected, not output-name-matched: a service that defines this script gets the
+      # check, every other consumer of this reusable workflow (identity, render, catalog, ...)
+      # is unaffected since they have no such file. The script reads its own role ARNs via
+      # `terraform output` — this step just needs to be in the right directory (it already is,
+      # via the job-level `working-directory` default) with AWS credentials in scope (already
+      # configured above).
+      - name: 🔒 Verify per-product media IAM isolation
+        if: steps.apply.outcome == 'success'
+        run: |
+          if [ -f scripts/verify-media-iam-isolation.sh ]; then
+            echo "Found scripts/verify-media-iam-isolation.sh — running cross-product IAM deny verification"
+            bash scripts/verify-media-iam-isolation.sh
+          else
+            echo "No scripts/verify-media-iam-isolation.sh in this terraform_dir — skipping (not applicable to this service)"
+          fi
+
       - name: 🔄 Recovery - Push errored state
         if: failure() && steps.apply.outcome == 'failure'
         env:
