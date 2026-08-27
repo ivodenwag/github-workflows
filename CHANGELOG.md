@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **reusable-terraform-deploy.yml — Cross-product media IAM deny check**: Added a step after Terraform Apply that runs `scripts/verify-media-iam-isolation.sh` from the calling service's `terraform_dir` if the file is present, feature-detected by file existence rather than named Terraform outputs; skips cleanly (no failure) for every other consumer of the reusable workflow that doesn't define this script
+  - Ref: INVEST-005-EPIC-006-FEATURE-002-US-004
+
 ### Changed
 - Simplified to 2-stage approach: development and production (removed QA stage)
 - Migrated from npm-based CI to Docker Compose based CI
